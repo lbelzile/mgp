@@ -36,11 +36,36 @@ dmvnorm <- function(x, mean, sigma, logd = FALSE){
   } else{
    stopifnot(ncol(x) == length(mean))
   }
-  .dmvnorm_arma(x, as.vector(mean), as.matrix(sigma), logd = as.logical(logd))
+  mgp::.dmvnorm_arma(x, as.vector(mean), as.matrix(sigma), logd = as.logical(logd))
 
 }
 
-
+#' Multivariate normal density function parametrized in terms of a precision matrix
+#'
+#' This function returns the log-density for a multivariate Gaussian distribution.
+#'
+#' @inheritParams dmvnorm
+#' @param precis precision matrix
+#' @return density or log-density of the \code{nrow(x)} sample
+#' @export
+dmvnorm.precis <- function(x, mean, precis, logd = FALSE) {
+  if(is.vector(x)){
+    x <- t(as.matrix(x))
+  }
+  if(missing(mean)){
+    mean <- rep(0, ncol(x))
+  }
+  if(missing(precis)){
+    precis <- diag(0, ncol(x))
+  }
+  rooti <- t(chol(precis))
+  quads <- colSums((crossprod(rooti, (t(x) - mean)))^2)
+  if(logd){
+    return(-(ncol(x) / 2) * log(2 * pi) + sum(log(diag(rooti))) - .5 * quads)
+  } else{
+    return(exp(-(ncol(x) / 2) * log(2 * pi) + sum(log(diag(rooti))) - .5 * quads))
+  }
+}
 
 #' Inverse gamma density, parametrized in terms of shape and rate
 #'

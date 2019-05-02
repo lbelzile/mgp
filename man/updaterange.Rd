@@ -4,7 +4,7 @@
 \alias{updaterange}
 \title{Update range parameter via Metropolis-Hastings}
 \usage{
-updaterange(tau, alpha, lambda, di, a, b, lb = 0.01, step = 0.2,
+updaterange(tau, alpha, lambda, di, a, b, lb = 0.01, discount = 0.2,
   maxstep = Inf)
 }
 \arguments{
@@ -22,9 +22,9 @@ updaterange(tau, alpha, lambda, di, a, b, lb = 0.01, step = 0.2,
 
 \item{lb}{lower bound for admissible value of \eqn{\lambda}. Default to 0.01.}
 
-\item{step}{size of step in Newton update; default to 0.2.}
+\item{discount}{size of discount in Newton update; default to 0.2.}
 
-\item{maxstep}{maximum step size for the truncated Normal proposal}
+\item{maxstep}{maximum discount size for the truncated Normal proposal}
 }
 \value{
 new value of \code{lambda}
@@ -36,7 +36,10 @@ exponential covariance model with precision \eqn{\alpha} and range \eqn{\lambda}
 }
 \details{
 The difference with the \code{spatial.gev.bma} package is that proposals
-are truncated Gaussian, so may be accepted even if the Newton step is centered at negative values.
+are truncated Gaussian, so may be accepted even if the Newton discount is centered at negative values.
 If the current \eqn{\lambda} value is in a region where the Hessian matrix is not negative, the proposal
-is automatically rejected. The function \code{step} controls the size of the Newton steps.
+is automatically rejected. The function \code{discount} controls the size of the Newton steps.
+}
+\author{
+code from spatial.gev.bma by Alex Lenkoski
 }

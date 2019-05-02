@@ -1,13 +1,13 @@
 Package: mgp
 Type: Package
 Title: Multivariate generalized Pareto models
-Version: 2019.04.30
+Version: 2019.05.02
 Author: Leo Belzile
 Maintainer: Leo Belzile <belzilel@gmail.com>
 Description: Utilities for fitting Brown-Resnick, extremal Student
     logistic models with max-risk functional. This package is used
     for a simulation study with Markov chain Monte Carlo methods.
-Imports: TruncatedNormal (>= 1.1.7), Rcpp (>= 0.12.16)
+Imports: TruncatedNormal (>= 1.1.7), Rcpp (>= 0.12.16), mvPot, alabama, mev
 LinkingTo: Rcpp, RcppArmadillo
 License: GPL-2
 Encoding: UTF-8

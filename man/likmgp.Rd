@@ -4,13 +4,13 @@
 \alias{likmgp}
 \title{Likelihood for multivariate generalized Pareto distribution}
 \usage{
-likmgp(dat, u, thresh = u, loc, scale, shape, par, model = c("br",
-  "xstud", "log"), likt = c("mgp", "pois", "binom"), lambdau = 1, ...)
+likmgp(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
+  "log"), likt = c("mgp", "pois", "binom"), lambdau = 1, ...)
 }
 \arguments{
 \item{dat}{matrix of observations}
 
-\item{u}{functional threshold for the maximum}
+\item{thresh}{functional threshold for the maximum}
 
 \item{loc}{vector of location parameter for the marginal generalized Pareto distribution}
 

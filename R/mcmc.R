@@ -5,9 +5,9 @@
 #' exponential covariance model with precision \eqn{\alpha} and range \eqn{\lambda}.
 #'
 #' The difference with the \code{spatial.gev.bma} package is that proposals
-#' are truncated Gaussian, so may be accepted even if the Newton step is centered at negative values.
+#' are truncated Gaussian, so may be accepted even if the Newton discount is centered at negative values.
 #' If the current \eqn{\lambda} value is in a region where the Hessian matrix is not negative, the proposal
-#' is automatically rejected. The function \code{step} controls the size of the Newton steps.
+#' is automatically rejected. The function \code{discount} controls the size of the Newton steps.
 #'
 #' @param tau current value of centered random effects
 #' @param alpha precision of the random effect
@@ -16,24 +16,46 @@
 #' @param a shape parameter of the Gamma prior for \eqn{\lambda}
 #' @param b rate parameter of the Gamma prior for \eqn{\lambda}
 #' @param lb lower bound for admissible value of \eqn{\lambda}. Default to 0.01.
-#' @param step size of step in Newton update; default to 0.2.
-#' @param maxstep maximum step size for the truncated Normal proposal
-#'
+#' @param discount size of discount in Newton update; default to 0.2.
+#' @param maxstep maximum discount size for the truncated Normal proposal
+#' @author code from spatial.gev.bma by Alex Lenkoski
 #' @return new value of \code{lambda}
 #' @export
-updaterange <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, step = 0.2, maxstep = Inf){
+updaterange <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
+
+  l.prime <-  function (tau, alpha, lambda, D, a, b){
+    E.l <- exp(-1/lambda * D)
+    diag(E.l) <- diag(E.l) + 1e-05
+    E.inv <- solve(E.l)
+    F.l <- 1/lambda^2 * D * E.l
+    M.l <- E.inv %*% (-F.l) %*% E.inv
+    res <- -0.5 * sum(diag(E.inv %*% F.l)) - 0.5 * alpha * t(tau) %*% M.l %*% tau - b + (a - 1)/lambda
+    return(res[1])
+  }
+  l.double.prime <- function (tau, alpha, lambda, D, a, b) {
+    E.l <- exp(-1/lambda * D)
+    diag(E.l) <- diag(E.l) + 1e-05
+    E.inv <- solve(E.l)
+    F.l <- 1/lambda^2 * D * E.l
+    M.l <- E.inv %*% (-F.l) %*% E.inv
+    G.l <- -2/lambda^3 * (D * E.l) + 1/lambda^2 * (D * F.l)
+    L.l <- M.l %*% F.l + E.inv %*% G.l
+    N.l <- M.l %*% (-F.l) %*% E.inv + E.inv %*% (-G.l) %*% E.inv + E.inv %*% (-F.l) %*% M.l
+    res <- -0.5 * sum(diag(L.l)) - 0.5 * alpha * t(tau) %*% N.l %*%  tau - (a - 1) * lambda^(-2)
+    return(res[1])
+  }
   stopifnot(maxstep > 0)
   l.curr <- l.prime(tau, alpha, lambda, di, a, b)
   l.double.curr <- l.double.prime(tau, alpha, lambda, di, a, b)
   d.curr <- -l.double.curr
-  b.curr <- step * l.curr / d.curr + lambda
+  b.curr <- discount * l.curr / d.curr + lambda
 if (isTRUE(d.curr > 0)) {
   lambda.new <- TruncatedNormal::mvrandn(pmax(lb, lambda - maxstep), lambda + maxstep, Sig = matrix(1/d.curr), n = 1, mu = b.curr)
   #rnorm(1, b.curr/d.curr, sd = sqrt(1/d.curr))
   l.new <- l.prime(tau, alpha, lambda.new, di, a, b)
   l.double.new <- l.double.prime(tau, alpha, lambda.new, di, a, b)
   d.new <- -l.double.new
-  b.new <- step * l.new / d.new + lambda.new
+  b.new <- discount * l.new / d.new + lambda.new
   if (isTRUE(d.new > 0)) {
     E.l.curr <- exp(-1/lambda * di)
     diag(E.l.curr) <- diag(E.l.curr) + 1e-05
@@ -177,4 +199,266 @@ adaptive <- function(attempts, acceptance, sd.p){
   }
 
   return(list(sd = newsd, acc = acc, att = att))
+}
+
+#' Wrap angular component in anisotropy
+#' @param ang angle
+#' @return angle between \eqn{(-\pi/2,\pi/2)}
+#' @keywords internal
+#' @export
+wrapAng <- function(ang){
+  stopifnot(length(ang) == 1L)
+  if(ang > -pi/2 && ang < pi/2){
+    return(ang)
+  } else{
+    stang <- ang %% (2*pi)
+    if(stang > 1.5*pi){
+      return(stang - 2*pi)
+    } else if(stang < 0.5*pi){
+      return(stang)
+    } else if(stang > pi){
+      return(-0.5*pi + (1.5*pi - stang))
+    } else{
+      return(pi/2 - (stang - pi/2))
+    }
+  }
+}
+
+
+
+
+
+#' Update for latent Gaussian model for the scale parameter of a generalized Pareto
+#'
+#' The scale has a log-Gaussian prior with variance \code{lscale.tausq} and precision (the inverse of the correlation matrix)
+#' given by \code{lscale.precis}.
+#'
+#' @param scale vector of scale parameters for the generalized Pareto distribution
+#' @param shape vector of shape parameters for the generalized Pareto distribution
+#' @param mmax vector of maximum components in \code{ldat}
+#' @param ldat list with exceedances at each site
+#' @param lscale.mu mean of the log-Gaussian process for the scale
+#' @param lscale.precis precision matrix of the log-Gaussian process corresponding to the inverse of the correlation matrix
+#' @param lscale.tausq variance of the log-Gaussian process
+#' @param mmax maximum of each series in \code{ldat}
+#' @param cshape logical; is the shape parameter the same for each site? Default to \code{TRUE}.
+#' @param discount numeric giving the discount factor for the Newton update. Default to 1.
+#' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
+#' @return a vector of scale parameters
+#' @export
+update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.tausq, mmax, discount = 1, maxstep = Inf){
+  # Gradient and Hessian for the log-gaussian random effect model
+  gradlgauss <- function(x, mu, Q){ c(-1/x- Q %*% (log(x)-mu)*(1/x))}
+  hesslgauss <- function(x, mu, Q){ if(length(x) > 1L){
+    diag(1/x^2) - Q * tcrossprod(1/x,1/x) + diag(c(Q %*% (log(x)-mu))/(x^2))
+  } else{
+    (1- Q) / x^2 + Q * (log(x)-mu)/(x^2)
+  }}
+
+  # likelihood function
+  llfun <- function(scale, shape, ind = 1:D, ...){
+    scale <- rep(scale, length.out = D)
+    shape <- rep(shape, length.out = D)
+    sum(sapply(ind, function(i){gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+  }
+  if(length(shape) == 1L){
+    cshape <- TRUE
+  } else{
+    stopifnot(length(scale) == length(shape))
+    cshape <- FALSE
+  }
+
+  # Componentwise maximum at site to compute bounds for simulating scale
+  if(missing(mmax)){
+    mmax <- as.vector(unlist(lapply(ldat, max)))
+  }
+
+
+  #Start update
+  D <- length(scale)
+  for(k in sample.int(D, D)){
+    #Conditional mean and precision for log-Gaussian - both do not depend on current value of "k"
+    condmean <- c(lscale.mu[k] - solve(lscale.precis[k,k, drop = FALSE]) %*% lscale.precis[k,-k, drop = FALSE] %*% (log(scale[-k]) - lscale.mu[-k]))
+    condprec <- lscale.precis[k,k, drop = FALSE]/lscale.tausq
+    #Lower bound for the scale - simulations are from a truncated Gaussian
+    if(cshape){
+      lbscale <- pmax(-shape*mmax[k], 0, scale[k] - maxstep)
+      ubscale <- pmin(Inf, scale[k] + maxstep)
+    } else{
+      lbscale <- pmax(-shape[k]*mmax[k], 0, scale[k] - maxstep)
+      ubscale <- pmin(Inf, scale[k] + maxstep)
+    }
+    #Copy scale, perform Newton discount from current value
+    scale.p <- scale
+    #Gradient and Hessian at current value
+    fp <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]}) +
+      gradlgauss(x = scale[k], mu = condmean, Q = condprec)
+    if(length(k) > 1L){
+      fpp <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]], method = "obs")[1,1]})) +
+        hesslgauss(x = scale[k], mu = condmean, Q = condprec)
+    } else{
+      fpp <- -mev::gpd.infomat(par = c(scale[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1,1] +
+        hesslgauss(x = scale[k], mu = condmean, Q = condprec)
+    }
+    continue <- isTRUE(all(eigen(fpp, only.values = TRUE)$values < 0))
+    if(continue){
+      # Mean and scale for the proposal - with a damping factor
+      Sig1 <- -as.matrix(solve(fpp))
+      mu1 <- c(scale[k] + damp.scale[k] * Sig1 %*% fp);
+      scale.p[k] <- TruncatedNormal::mvrandn(l = lbscale, u = ubscale, mu = mu1, Sig = Sig1, n = 1)
+      #Taylor approximation from proposal - obtain mean and variance for Laplace approximation
+      fp2 <- sapply(k, function(j){mev::gpd.score(par = c(scale.p[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]}) +
+        gradlgauss(x = scale.p[k], mu = condmean, Q = condprec)
+      if(length(k) > 1L){
+        fpp2 <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale.p[j], ifelse(cshape, shape,shape[j])), dat = ldat[[j]], method = "obs")[1,1]})) +           hesslgauss(x = scale.p[k], mu = condmean, Q = condprec)
+      } else{
+        fpp2 <- -mev::gpd.infomat(par = c(scale.p[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1,1] +
+          hesslgauss(x =scale.p[k], mu = condmean, Q = condprec)
+      }
+      continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
+      if(continue){
+        Sig2 <- -as.matrix(solve(fpp2))
+        mu2 <- c(scale.p[k] + damp.scale[k] * Sig2 %*% fp2);
+       # Jacobian of transformation
+        jac <- dmvnrm_arma(x = t(as.matrix(as.vector(scale.c[k]))), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
+          dmvnrm_arma(x = t(as.matrix(as.vector(scale.p[k]))), mean  = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
+          suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu2, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig2), n = 1000)$prob)) +
+          suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu1, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig1), n = 1000)$prob))
+
+        #Evaluate log-density and log-prior
+        logdens <- llikfn(scale = scale, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
+        logdens.p <- llikfn(scale = scale.p, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
+        # Need not be computed for every update of the parameters - so decouple
+        if(length(k) > 1L){
+          priorA.p <-  dMvn.precis(log(scale.p[k]), mu = condmean, precis = condprec, log = TRUE) - sum(log(scale.p[k]))
+          priorA <-  dMvn.precis(log(scale[k]), mu = condmean, precis = condprec, log = TRUE) - sum(log(scale[k]))
+        } else{
+          priorA.p <-  dnorm(log(scale.p[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale.p[k])
+          priorA <-  dnorm(log(scale[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale[k])
+        }
+        acpt <- logdens.p - logdens + priorA.p - priorA + jac
+        if(log(runif(1)) < acpt){
+          scale <- scale.p
+        }
+      }
+    }
+  }
+  return(scale)
+}
+
+
+#' Update for latent Gaussian model for the scale parameter of a generalized Pareto
+#'
+#' The scale has a log-Gaussian prior with variance \code{lscale.tausq} and precision (the inverse of the correlation matrix)
+#' given by \code{lscale.precis}.
+#'
+#' @param scale vector of scale parameters for the generalized Pareto distribution
+#' @param shape vector of shape parameters for the generalized Pareto distribution
+#' @param mmax vector of maximum components in \code{ldat}
+#' @param ldat list with exceedances at each site
+#' @param lscale.mu mean of the log-Gaussian process for the scale
+#' @param lscale.precis precision matrix of the log-Gaussian process corresponding to the inverse of the correlation matrix
+#' @param lscale.tausq variance of the log-Gaussian process
+#' @param mmax maximum of each series in \code{ldat}
+#' @param cshape logical; is the shape parameter the same for each site? Default to \code{TRUE}.
+#' @param discount numeric giving the discount factor for the Newton update. Default to 1.
+#' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
+#' @return a vector of scale parameters
+#' @export
+update.shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, discount = 1, maxstep = 0.1){
+  D <- length(scale)
+  stopifnot(length(ldat) == length(scale))
+  # likelihood function
+  llfun <- function(scale, shape, ind = 1:D, ...){
+    scale <- rep(scale, length.out = D)
+    shape <- rep(shape, length.out = D)
+    sum(sapply(ind, function(i){gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+  }
+  if(length(shape) == 1L){
+    cshape <- TRUE
+  } else{
+    stopifnot(length(scale) == length(shape), !is.null(shape.mu), !is.null(shape.precis), !is.null(shape.tausq))
+    cshape <- FALSE
+  }
+
+  # Componentwise maximum at site to compute bounds for simulating scale
+  if(missing(mmax)){
+    mmax <- as.vector(unlist(lapply(ldat, max)))
+  }
+
+for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
+  if(cshape){
+    condmean <- 0; condprec <- 25
+    lbxi <- pmax(-0.49, -min(scale/mmax), shape - maxstep)
+    ubxi <- shape + maxstep
+  } else{
+    condmean <- c(shape.mu[k] - solve(shape.precis[k,k, drop = FALSE]) %*% shape.precis[k,-k, drop = FALSE] %*% (shape[-k] - shape.mu[-k]))
+    condprec <- shape.precis[k,k, drop = FALSE]/shape.tausq
+    lbxi <- pmax(-0.49,-scale[k]/mmax[k])
+    ubxi <- pmax(shape[k] + maxstep)
+  }
+  #Copy shape, perform Newton step from current value
+  shape.p <- shape
+  if(cshape){
+    fp <- sum(sapply(1:D, function(j){mev::gpd.score(par = c(scale[j], shape), dat = ldat[[j]])[2]})) +
+      -c(condprec %*% (shape[k] - condmean))
+    fpp <- sum(sapply(1:D, function(j){-mev::gpd.infomat(par = c(scale[j], shape), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
+  } else{
+    #Gradient and Hessian at current value
+    fp <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], shape[j]), dat = ldat[[j]])[2]}) +
+      -c(condprec %*% (shape[k] - condmean))
+    if(length(k) > 1L){
+      fpp <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], shape[j]), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
+    } else{
+      fpp <- -mev::gpd.infomat(par = c(scale[k], shape[k]), dat = ldat[[k]], method = "obs")[2,2] - condprec
+    }
+  }
+  continue <- isTRUE(all(eigen(fpp, only.values = TRUE)$values < 0))
+  if(continue){
+    # Mean and scale for the proposal - with a damping factor to avoid oscillations
+    Sig1 <- -as.matrix(solve(fpp))
+    mu1 <- shape[k] + discount * Sig1 %*% fp
+    shape.p[k] <- TruncatedNormal::mvrandn(l = lbxi, u = ubxi, mu = mu1, Sig = Sig1, n = 1)
+    if(cshape){
+      fp2 <- sum(sapply(1:D, function(j){mev::gpd.score(par = c(scale[j], shape.p), dat = ldat[[j]])[2]})) +
+        -c(condprec %*% (shape.p[k] - condmean))
+      fpp2 <- sum(sapply(1:D, function(j){-mev::gpd.infomat(par = c(scale[j], shape.p), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
+    } else{
+      #Taylor approximation from proposal - obtain mean and variance for Laplace approximation
+      fp2 <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], shape.p[j]), dat = ldat[[j]])[2]}) -
+        c(condprec %*% (shape.p[k] - condmean))
+      if(length(k) > 1L){
+        fpp2 <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], shape.p[j]), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
+      } else{
+        fpp2 <- -mev::gpd.infomat(par = c(scale[k], shape.p[k]), dat = ldat[[k]], method = "obs")[2,2] - condprec
+      }
+    }
+    continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
+    if(continue){
+      Sig2 <- -as.matrix(solve(fpp2)) #-as.matrix(solve(fpp2 + damp.shape[k]*if(is.null(ncol(fpp2))){fpp2} else{diag(fpp2)))})
+      mu2 <- shape.p[k] + discount * Sig2 %*% fp2
+      # Jacobian of transformation
+
+        jac <- mgp::.dmvnorm_arma(x = matrix(shape[k], ncol = length(k)), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
+          mgp::.dmvnorm_arma(x = matrix(shape.p[k], ncol = length(k)), mean = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
+          suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbxi - mu2, u = ubxi - mu2, Sig = as.matrix(Sig2), n = 1000)$prob)) +
+          suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbxi - mu1, u = ubxi - mu1, Sig = as.matrix(Sig1), n = 1000)$prob))
+
+      if(cshape){
+        logprior <- dnorm(shape, 0, sd = sqrt(1/condprec), log = TRUE)
+        logprior.p <- dnorm(shape.p, 0, sd = sqrt(1/condprec), log = TRUE)
+      } else{
+        logprior.p <-  mgp::dmvnorm.precis(shape.p[k], mean = condmean, precis = condprec, logd = TRUE)
+        logprior <-  mgp::dmvnorm.precis(shape[k], mean = condmean, precis = condprec, logd = TRUE)
+      }
+      logdens <- llfun(scale = scale, shape = shape, ind = if(cshape){1:D} else{k})
+      logdens.p <- llfun(scale = scale, shape = shape.p, ind = if(cshape){1:D} else{k})
+      acpt <- logdens.p - logdens + logprior.p - logprior + jac
+      if(log(runif(1)) < acpt){
+        shape <- shape.p
+      }
+    }
+  }
+}
+  return(shape)
 }

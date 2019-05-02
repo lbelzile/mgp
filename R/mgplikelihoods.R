@@ -80,7 +80,7 @@ jac <- function(dat, loc = 0, scale, shape, lambdau = 1, censored){
     lambdau <- rep(lambdau, length.out = ncol(dat))
     ll <- 0
     for(j in 1:ncol(dat)){
-      ll <- ll - (N-sum(censored[,j]))*(log(scale[j]) + log(lambdau[j])) + (1/shape[j]-1)*sum(log(1+shape[j]/scale[j]*pmax(0, dat[!censored[,j],j]-loc[j])))
+      ll <- ll - (N - sum(censored[,j])) * (log(scale[j]) + log(lambdau[j])) + (1/shape[j]-1)*sum(log(1+shape[j]/scale[j]*pmax(0, dat[!censored[,j],j]-loc[j])))
     }
     return(ll)
   }
@@ -95,7 +95,7 @@ jac <- function(dat, loc = 0, scale, shape, lambdau = 1, censored){
 #' @export
 gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1){
   if(is.vector(dat)){
-    return((1+shape/scale*pmax(dat - loc,0))^(1/shape) / lambdau)
+    return((1+shape/scale*pmax(dat - loc, 0))^(1/shape) / lambdau)
   } else{
     loc <- rep(loc, length.out = ncol(dat))
     scale <- rep(scale, length.out = ncol(dat))
@@ -116,7 +116,7 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1){
 #' \deqn{\{y \in F: \max_{j=1}^D \sigma_j \frac{y^\xi_j-1}{\xi_j}+\mu_j  > u\};}
 #' where \eqn{\mu} is \code{loc}, \eqn{\sigma} is \code{scale} and \eqn{xi} is \code{shape}.
 #' @param dat matrix of observations
-#' @param u functional threshold for the maximum
+#' @param thresh functional threshold for the maximum
 #' @param loc vector of location parameter for the marginal generalized Pareto distribution
 #' @param scale vector of scale parameter for the marginal generalized Pareto distribution
 #' @param shape vector of shape parameter for the marginal generalized Pareto distribution
@@ -135,7 +135,7 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1){
 #'}
 #' @return the value of the log-likelihood with \code{attributes} \code{expme}, giving the exponent measure
 #' @export
-likmgp <- function(dat, u, thresh = u, loc, scale, shape, par, model = c("br", "xstud","log"),
+likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud","log"),
                       likt = c("mgp","pois","binom"), lambdau = 1, ...){
   #Rename arguments
   Z <- dat
@@ -236,7 +236,7 @@ likmgp <- function(dat, u, thresh = u, loc, scale, shape, par, model = c("br", "
     intens <- intensBR(tdat = tdat, Lambda = Lambda)
     exponentMeasure <- sum(.weightsBR(z = yu, Lambda = Lambda, prime = B1, method = "mvPot", genvec = genvec1, nrep = 1)/yu)
   } else if(model == "xstud"){
-    intens <- intensXstud(tdat = tdat, nu = nu, Sigma = Sigma)
+    intens <- intensXstud(tdat = tdat, df = df, Sigma = Sigma)
     exponentMeasure <- sum(.weightsXstud(z =  yu, Sigma = Sigma, df = nu, method = "mvPot", prime = B1, genvec = genvec1, nrep = 1)/yu)
   } else if(model == "log"){
     lVfunlog <- function(x, alpha){

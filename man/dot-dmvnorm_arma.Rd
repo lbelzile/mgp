@@ -23,3 +23,4 @@ This function returns the log-density for a multivariate Gaussian distribution.
 The data must be imputed as a matrix, using e.g., \code{as.matrix}, with each row
 representing an observation.
 }
+\keyword{internal}

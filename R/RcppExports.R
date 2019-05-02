@@ -12,6 +12,8 @@
 #' @param sigma positive definite covariance matrix
 #' @param logd logical; whether log-density should be returned (default to \code{FALSE})
 #' @return density or log-density of the \code{nrow(x)} sample
+#' @keywords internal
+#' @export
 .dmvnorm_arma <- function(x, mean, sigma, logd = FALSE) {
     .Call('_mgp_dmvnorm_arma', PACKAGE = 'mgp', x, mean, sigma, logd)
 }
@@ -27,6 +29,7 @@
 #' @param scale numeric vector of length 1, greater than 1.
 #' @param rho angle for the anisotropy, must be larger than \eqn{\pi/2} in modulus.
 #' @return a \code{d} by \code{d} square matrix of pairwise distance
+#' @export
 distg <- function(loc, scale, rho) {
     .Call('_mgp_distg', PACKAGE = 'mgp', loc, scale, rho)
 }

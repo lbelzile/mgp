@@ -14,6 +14,8 @@ const double log2pi = std::log(2.0 * M_PI);
 //' @param sigma positive definite covariance matrix
 //' @param logd logical; whether log-density should be returned (default to \code{FALSE})
 //' @return density or log-density of the \code{nrow(x)} sample
+//' @keywords internal
+//' @export
 // [[Rcpp::export(.dmvnorm_arma)]]
 arma::vec dmvnorm_arma(arma::mat x,
                       arma::rowvec mean,
@@ -48,6 +50,7 @@ arma::vec dmvnorm_arma(arma::mat x,
 //' @param scale numeric vector of length 1, greater than 1.
 //' @param rho angle for the anisotropy, must be larger than \eqn{\pi/2} in modulus.
 //' @return a \code{d} by \code{d} square matrix of pairwise distance
+//' @export
 // [[Rcpp::export]]
 arma::mat distg(arma::mat loc, NumericVector scale, NumericVector rho){
   int d = loc.n_rows;
