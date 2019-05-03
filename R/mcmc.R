@@ -21,8 +21,8 @@
 #' @author code from spatial.gev.bma by Alex Lenkoski
 #' @return new value of \code{lambda}
 #' @export
-updaterange <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
-
+update.range <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
+  attributes(lambda) <- list(accept = FALSE)
   l.prime <-  function (tau, alpha, lambda, D, a, b){
     E.l <- exp(-1/lambda * D)
     diag(E.l) <- diag(E.l) + 1e-05
@@ -76,6 +76,7 @@ if (isTRUE(d.curr > 0)) {
     mh <- L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr
     if (isTRUE(log(runif(1)) < mh)) {
       lambda <- lambda.new
+      attributes(lambda) <- list(accept = TRUE)
     }
   }
 }
@@ -462,3 +463,86 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 }
   return(shape)
 }
+
+#' Update function based on Metropolis-Hasting algorithm
+#'
+#' Proposals are made based on a (conditional) truncated Gaussian distribution at indices \code{ind}
+#' given other components.
+#' @param par string giving the name of the parameter to update; determines which values are stored and returned in \code{par}
+#' @param cur current value of the vector of parameters of which one component is to be updated
+#' @param lb lower bounds for the parameter of interest. Default to \code{-Inf} if argument is missing.
+#' @param ub upper bounds for the parameters of interest. Default to \code{Inf} if argument is missing.
+#' @param prior.fun log prior function, a function of the parameter to update.
+#' @param lik.fun log-likelihood function, a function of the parameter to update. For dependence parameters, updates of the dependence parameters can be passed as attributes.
+#' @param ll value of the log-likelihood at \code{cur}
+#' @param pmu proposal mean; if missing, default to random walk.
+#' @param pcov covariance matrix of the proposal for \code{cur}
+#' @param cond logical; should updates be made conditional on other values in \code{cur}. Default to \code{TRUE}
+#' @param model string; either of \code{"xstud"} or \code{"br"}
+#' @return a list with components
+#' \itemize{
+#' \item{\code{ll}}: value of the log-likelihood, with potential additional parameters passed as attributes
+#' \item{\code{cur}}: values of the parameters after update
+#' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE})
+update.mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, ...){
+  model <- match.arg(model)
+  par <- match.arg(par)
+  # overwrite missing values with default setting
+  if(missing(ind)){
+    lind <- length(cur)
+    ind <- 1:lc
+  } else{
+    lind <- length(ind)
+  }
+  if(missing(lb)){
+    lb <- rep(-Inf, length.out = lc)
+  }
+  if(missing(ub)){
+    lb <- rep(Inf, length.out = lc)
+  }
+  #Sanity checks for length of arguments - only lengths
+  pcov <- as.matrix(pcov) # handle scalar case
+  stopifnot(length(lb) == lc, lc == length(ub), ncol(pcov) == nrow(pcov), ncol(pcov) == length(cur))
+  # Copy value
+  prop <- cur
+  if(missing(pmu)){
+   pmu <- cur
+   RW <- TRUE
+  } else{
+   stopifnot(length(pmu) == length(cur))
+  }
+  if(!cond){
+    sig <- as.matrix(pcov[ind, ind])
+  # Sample new proposal from truncated Normal centered at current value
+  prop[ind] <- TruncatedNormal::mvrandn(l = lb, mu = pmu[ind], u = ub, Sig = sig, n = 1)
+  if(RW){
+    # mean is at previous iteration, so density term drops out because of symmetry,
+    #but not normalizing constant of truncated dist (since means differ)
+    jac <- suppressWarnings(-log(TruncatedNormal::mvNcdf(l = lb - prop[ind], u = ub - prop[ind], Sig = sig, n = 1000)$prob) +
+                              log(TruncatedNormal::mvNcdf(l = lb - cur[ind], u = ub - cur[ind], Sig = sig, n = 1000)$prob))
+  } else{ #fixed mean, so normalizing constants for truncated components cancels out of the ratio of transition kernel densities
+    jac <- mgp::dmvnorm(x = cur[ind], mean = pmu[ind], sigma = sig, logd = TRUE) -
+      mgp::dmvnorm(x = prop[ind], mean = pmu[ind], sigma = sig, logd = TRUE)
+  }
+  } else{# cond == TRUE
+   prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
+   jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
+     dcondmvtnorm(n = 1L, ind = ind, x = prop[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
+
+  }
+  ll.p <- lik.fun(prop)
+  if(missing(ll)){
+    ll.c <- lik.fun(cur)
+  } else{
+    ll.c <- ll
+  }
+  prior.p <- prior.fun(prop)
+  prior.c <- prior.fun(cur)
+  acpt <- ll.p - ll.c + prior.p - prior.c + jac
+  if(isTRUE(log(runif(1)) < acpt)){
+    return(list(ll = ll.p, cur = prop, accept = TRUE))
+  } else{
+    return(list(ll = ll.c, cur = cur, accept = FALSE))
+  }
+}
+
