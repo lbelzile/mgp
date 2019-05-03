@@ -8,6 +8,7 @@ Description: Utilities for fitting Brown-Resnick, extremal Student
     logistic models with max-risk functional. This package is used
     for a simulation study with Markov chain Monte Carlo methods.
 Imports: TruncatedNormal (>= 1.1.7), Rcpp (>= 0.12.16), mvPot, alabama, mev
+Suggests: geoR
 LinkingTo: Rcpp, RcppArmadillo
 License: GPL-2
 Encoding: UTF-8
