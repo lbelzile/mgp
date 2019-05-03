@@ -29,13 +29,13 @@ power.vario <- function(h, alpha, scale = 1){
 #' @param scale scale parameter
 #' @return a vector or matrix of correlations of the same dimensions as \code{h}
 #' @export
-powerexp.cor <- function(h, alpha, scale = 1){
+powerexp.cor <- function(h, alpha = 1, scale = 1){
   stopifnot(length(alpha) == 1, length(scale) == 1)
   if(scale < 0){stop("Invalid scale parameter in power.vario")}
   if(alpha < 0 || alpha > 2-1e-10){
     stop("Invalid shape parameter in `power.vario`")
   }
-  exp(-(h/theta[1])^theta[2])
+  exp(-(h/scale)^alpha)
 }
 
 #' Variogram model of Schlather and Moreva
@@ -51,6 +51,7 @@ powerexp.cor <- function(h, alpha, scale = 1){
 #' @return a vector or matrix of variogram values of the same length as \code{h}
 #' @export
 schlather.vario <- function(hmat, alpha, beta, scale = 1){
+  stopifnot(length(alpha) == 1, length(beta) == 1, length(scale) == 1)
   if(alpha <= 0 || alpha >2-1e-10){
     stop("Invalid shape parameter in `schlather.vario`")
   }
@@ -62,7 +63,7 @@ schlather.vario <- function(hmat, alpha, beta, scale = 1){
   }
   if(!(abs(beta) < 1e-5)){
     pow <- beta/alpha
-    ((1+(h/scale)^alpha[1])^pow - 1) / (exp(pow*log(2)) - 1)
+    ((1+(h/scale)^alpha)^pow - 1) / (exp(pow*log(2)) - 1)
   } else{
     log(1+(h/scale)^alpha)/log(2)
   }
