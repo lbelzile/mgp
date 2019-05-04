@@ -1,38 +1,3 @@
-#' Density of the multivariate Student density
-#'
-#' The function is adapted from \code{mvtnorm} package and computes the (log)-density
-#' of the whole sample.
-#'
-#' @param x vector or matrix of observations
-#' @param centrality parameter
-#' @param sigma covariance matrix
-#' @param df degrees of freedom parameter, default to 1 (Cauchy distribution)
-#' @param logd logical; should log-density be returned? default to \code{TRUE}
-#' @param keywords internal
-dmvstud <- function(x, mu = rep(0, p), sigma = diag(p), df = 1, logd = TRUE)  {
-  if (is.vector(x)){
-    x <- matrix(x, ncol = length(x))
-  }
-  p <- ncol(x)
-  stopifnot(length(mu) == ncol(x), df > 0)
-  if (is.infinite(df)){
-    return(mgp::dmvnorm(x, mean = mu, sigma = sigma, logd = log))
-  }
-  if (!missing(sigma)) {
-    if (p != ncol(sigma))
-      stop("x and sigma have non-conforming size")
-  }
-  dec <- try(chol(sigma))
-  if(is.character(sigma)){
-    stop("Could not compute the Cholesky decomposition of the covariance matrix `sigma`")
-  }
-  R.x_m <- backsolve(dec, t(x) - mu, transpose = TRUE)
-  rss <- colSums(R.x_m^2)
-  logretval <- lgamma((p + df)/2) - (lgamma(df/2) + sum(log(diag(dec))) +
-                                       p/2 * log(pi * df)) - 0.5 * (df + p) * log1p(rss/df)
-  return(ifelse(logd, sum(logretval), exp(sum(logretval))))
-}
-
 #' Conditional distribution of Gaussian or Student subvectors
 #'
 #' The function computes the conditional distribution of the sub-components in \code{ind} given the rest and
@@ -131,7 +96,7 @@ dcondmvtnorm <- function(x, ind, lbound = rep(-Inf, length(ind)), ubound = rep(I
     if(length(ind)==1L){
       res <- switch(model,
                     norm = mgp::dmvnorm(x = x[-ind], mean = mu[-ind], sigma = solve(sigma[-ind, -ind, drop = FALSE]), logd = TRUE) -
-                      TruncatedNormal:::lnNpr(a = (lbound - muC)/sqrt(sigmaC), b = (ubound - muC)/sqrt(sigmaC)),
+                      TruncatedNormal::lnNpr(a = (lbound - muC)/sqrt(sigmaC), b = (ubound - muC)/sqrt(sigmaC)),
                     stud = dmvstud(x = x[-ind], mu = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], df = df, logd = TRUE) -
                       log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = ubound - muC,
                                                   Sig = c(df + t(x[-ind]- mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind]- mu[-ind]))/

@@ -71,15 +71,53 @@ dmvnorm.precis <- function(x, mean, precis, logd = FALSE) {
 #'
 #' @param x vector of observations
 #' @param shape shape parameter, strictly positive
-#' @param rate rate parameter, strictly positive
+#' @param scale rate parameter, strictly positive
 #' @param log logical; should the log-density be returned?
 #' @export
-dinvgamma <- function(x, alpha, beta, log = TRUE){
-  stopifnot(any(c(alpha > 0, beta > 0)))
-  log.density <- alpha * log(beta) - lgamma(alpha) - (alpha + 1) * log(x) - (beta/x)
+dinvgamma <- function(x, shape, scale, log = TRUE){
+  stopifnot(any(c(shape > 0, scale > 0)))
+  log.density <- shape * log(scale) - lgamma(shape) - (shape + 1) * log(x) - (scale/x)
   if(log){
     return(log.density)
   } else {
     return(exp(log.density))
   }
 }
+
+#' Density of the multivariate Student density
+#'
+#' The function is adapted from \code{mvtnorm} package and computes the (log)-density
+#' of the whole sample.
+#'
+#' @param x vector or matrix of observations
+#' @param mu centrality parameter
+#' @param sigma covariance matrix
+#' @param df degrees of freedom parameter, default to 1 (Cauchy distribution)
+#' @param logd logical; should log-density be returned? default to \code{TRUE}
+#' @keywords internal
+#' @export
+dmvstud <- function(x, mu = rep(0, p), sigma = diag(p), df = 1, logd = TRUE)  {
+  if (is.vector(x)){
+    x <- matrix(x, ncol = length(x))
+  }
+  p <- ncol(x)
+  stopifnot(length(mu) == ncol(x), df > 0)
+  if (is.infinite(df)){
+    return(mgp::dmvnorm(x, mean = mu, sigma = sigma, logd = log))
+  }
+  if (!missing(sigma)) {
+    if (p != ncol(sigma))
+      stop("x and sigma have non-conforming size")
+  }
+  dec <- try(chol(sigma))
+  if(is.character(sigma)){
+    stop("Could not compute the Cholesky decomposition of the covariance matrix `sigma`")
+  }
+  R.x_m <- backsolve(dec, t(x) - mu, transpose = TRUE)
+  rss <- colSums(R.x_m^2)
+  logretval <- lgamma((p + df)/2) - (lgamma(df/2) + sum(log(diag(dec))) +
+                                       p/2 * log(pi * df)) - 0.5 * (df + p) * log1p(rss/df)
+  return(ifelse(logd, sum(logretval), exp(sum(logretval))))
+}
+
+

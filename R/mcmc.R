@@ -21,8 +21,10 @@
 #' @author code from spatial.gev.bma by Alex Lenkoski
 #' @return new value of \code{lambda}
 #' @export
-update.range <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
+#' @seealso \code{\link[spatial.gev.bma]{gev.update.lambda}}
+updt.range <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
   attributes(lambda) <- list(accept = FALSE)
+  logdet <- function(A) {return(2 * sum(log(diag(chol(A)))))}
   l.prime <-  function (tau, alpha, lambda, D, a, b){
     E.l <- exp(-1/lambda * D)
     diag(E.l) <- diag(E.l) + 1e-05
@@ -236,18 +238,16 @@ wrapAng <- function(ang){
 #'
 #' @param scale vector of scale parameters for the generalized Pareto distribution
 #' @param shape vector of shape parameters for the generalized Pareto distribution
-#' @param mmax vector of maximum components in \code{ldat}
 #' @param ldat list with exceedances at each site
 #' @param lscale.mu mean of the log-Gaussian process for the scale
 #' @param lscale.precis precision matrix of the log-Gaussian process corresponding to the inverse of the correlation matrix
 #' @param lscale.tausq variance of the log-Gaussian process
-#' @param mmax maximum of each series in \code{ldat}
-#' @param cshape logical; is the shape parameter the same for each site? Default to \code{TRUE}.
-#' @param discount numeric giving the discount factor for the Newton update. Default to 1.
+#' @param mmax vector of maximum of each series in \code{ldat}
+#' @param discount numeric giving the discount factor for the Newton  Default to 1.
 #' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
 #' @return a vector of scale parameters
 #' @export
-update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.tausq, mmax, discount = 1, maxstep = Inf){
+lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.tausq, mmax, discount = 1, maxstep = Inf){
   # Gradient and Hessian for the log-gaussian random effect model
   gradlgauss <- function(x, mu, Q){ c(-1/x- Q %*% (log(x)-mu)*(1/x))}
   hesslgauss <- function(x, mu, Q){ if(length(x) > 1L){
@@ -255,12 +255,11 @@ update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscal
   } else{
     (1- Q) / x^2 + Q * (log(x)-mu)/(x^2)
   }}
-
   # likelihood function
   llfun <- function(scale, shape, ind = 1:D, ...){
     scale <- rep(scale, length.out = D)
     shape <- rep(shape, length.out = D)
-    sum(sapply(ind, function(i){gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+    sum(sapply(ind, function(i){mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
   }
   if(length(shape) == 1L){
     cshape <- TRUE
@@ -305,7 +304,7 @@ update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscal
     if(continue){
       # Mean and scale for the proposal - with a damping factor
       Sig1 <- -as.matrix(solve(fpp))
-      mu1 <- c(scale[k] + damp.scale[k] * Sig1 %*% fp);
+      mu1 <- c(scale[k] + discount * Sig1 %*% fp);
       scale.p[k] <- TruncatedNormal::mvrandn(l = lbscale, u = ubscale, mu = mu1, Sig = Sig1, n = 1)
       #Taylor approximation from proposal - obtain mean and variance for Laplace approximation
       fp2 <- sapply(k, function(j){mev::gpd.score(par = c(scale.p[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]}) +
@@ -319,20 +318,20 @@ update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscal
       continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
       if(continue){
         Sig2 <- -as.matrix(solve(fpp2))
-        mu2 <- c(scale.p[k] + damp.scale[k] * Sig2 %*% fp2);
+        mu2 <- c(scale.p[k] + discount * Sig2 %*% fp2);
        # Jacobian of transformation
-        jac <- dmvnrm_arma(x = t(as.matrix(as.vector(scale.c[k]))), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
-          dmvnrm_arma(x = t(as.matrix(as.vector(scale.p[k]))), mean  = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
+        jac <- mgp::.dmvnorm_arma(x = t(as.matrix(as.vector(scale[k]))), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
+          mgp::.dmvnorm_arma(x = t(as.matrix(as.vector(scale.p[k]))), mean  = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu2, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig2), n = 1000)$prob)) +
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu1, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig1), n = 1000)$prob))
 
         #Evaluate log-density and log-prior
-        logdens <- llikfn(scale = scale, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
-        logdens.p <- llikfn(scale = scale.p, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
+        logdens <- llfun(scale = scale, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
+        logdens.p <- llfun(scale = scale.p, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
         # Need not be computed for every update of the parameters - so decouple
         if(length(k) > 1L){
-          priorA.p <-  dMvn.precis(log(scale.p[k]), mu = condmean, precis = condprec, log = TRUE) - sum(log(scale.p[k]))
-          priorA <-  dMvn.precis(log(scale[k]), mu = condmean, precis = condprec, log = TRUE) - sum(log(scale[k]))
+          priorA.p <-  dmvnorm.precis(x = log(scale.p[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale.p[k]))
+          priorA <-  dmvnorm.precis(log(scale[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale[k]))
         } else{
           priorA.p <-  dnorm(log(scale.p[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale.p[k])
           priorA <-  dnorm(log(scale[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale[k])
@@ -355,25 +354,23 @@ update.scale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscal
 #'
 #' @param scale vector of scale parameters for the generalized Pareto distribution
 #' @param shape vector of shape parameters for the generalized Pareto distribution
-#' @param mmax vector of maximum components in \code{ldat}
 #' @param ldat list with exceedances at each site
-#' @param lscale.mu mean of the log-Gaussian process for the scale
-#' @param lscale.precis precision matrix of the log-Gaussian process corresponding to the inverse of the correlation matrix
-#' @param lscale.tausq variance of the log-Gaussian process
-#' @param mmax maximum of each series in \code{ldat}
-#' @param cshape logical; is the shape parameter the same for each site? Default to \code{TRUE}.
-#' @param discount numeric giving the discount factor for the Newton update. Default to 1.
+#' @param shape.mu mean of the Gaussian process for the shape parameters
+#' @param shape.precis precision matrix of the Gaussian process corresponding to the inverse of the correlation matrix
+#' @param shape.tausq variance of the Gaussian process for the shape parameters
+#' @param mmax vector of maximum of each series in \code{ldat}
+#' @param discount numeric giving the discount factor for the Newton  Default to 1.
 #' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
 #' @return a vector of scale parameters
 #' @export
-update.shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, discount = 1, maxstep = 0.1){
+shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, discount = 1, maxstep = 0.1){
   D <- length(scale)
   stopifnot(length(ldat) == length(scale))
   # likelihood function
   llfun <- function(scale, shape, ind = 1:D, ...){
     scale <- rep(scale, length.out = D)
     shape <- rep(shape, length.out = D)
-    sum(sapply(ind, function(i){gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+    sum(sapply(ind, function(i){mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
   }
   if(length(shape) == 1L){
     cshape <- TRUE
@@ -436,7 +433,7 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
     }
     continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
     if(continue){
-      Sig2 <- -as.matrix(solve(fpp2)) #-as.matrix(solve(fpp2 + damp.shape[k]*if(is.null(ncol(fpp2))){fpp2} else{diag(fpp2)))})
+      Sig2 <- -as.matrix(solve(fpp2))
       mu2 <- shape.p[k] + discount * Sig2 %*% fp2
       # Jacobian of transformation
 
@@ -468,31 +465,32 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 #'
 #' Proposals are made based on a (conditional) truncated Gaussian distribution at indices \code{ind}
 #' given other components.
-#' @param par string giving the name of the parameter to update; determines which values are stored and returned in \code{par}
-#' @param cur current value of the vector of parameters of which one component is to be updated
+#' @param cur current value of the vector of parameters of which one component is to be updated.
 #' @param lb lower bounds for the parameter of interest. Default to \code{-Inf} if argument is missing.
 #' @param ub upper bounds for the parameters of interest. Default to \code{Inf} if argument is missing.
+#' @param ind indices of \code{cur} to update.
 #' @param prior.fun log prior function, a function of the parameter to update.
-#' @param lik.fun log-likelihood function, a function of the parameter to update. For dependence parameters, updates of the dependence parameters can be passed as attributes.
-#' @param ll value of the log-likelihood at \code{cur}
+#' @param lik.fun log-likelihood function, a function of the parameter to  For dependence parameters, updates of the dependence parameters can be passed as attributes.
+#' @param ll value of the log-likelihood at \code{cur}.
 #' @param pmu proposal mean; if missing, default to random walk.
-#' @param pcov covariance matrix of the proposal for \code{cur}
-#' @param cond logical; should updates be made conditional on other values in \code{cur}. Default to \code{TRUE}
-#' @param model string; either of \code{"xstud"} or \code{"br"}
+#' @param pcov covariance matrix of the proposal for \code{cur}.
+#' @param cond logical; should updates be made conditional on other values in \code{cur}. Default to \code{TRUE}.
+#' @param ... additional arguments passed to the function, currently ignored.
 #' @return a list with components
 #' \itemize{
-#' \item{\code{ll}}: value of the log-likelihood, with potential additional parameters passed as attributes
-#' \item{\code{cur}}: values of the parameters after update
-#' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE})
-update.mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, ...){
+#' \item{\code{ll}}: value of the log-likelihood, with potential additional parameters passed as attributes;
+#' \item{\code{cur}}: values of the parameters after update;
+#' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE}).
+#' }
+mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, ...){
   model <- match.arg(model)
   par <- match.arg(par)
   # overwrite missing values with default setting
   if(missing(ind)){
-    lind <- length(cur)
+    lc <- length(cur)
     ind <- 1:lc
   } else{
-    lind <- length(ind)
+    lc <- length(ind)
   }
   if(missing(lb)){
     lb <- rep(-Inf, length.out = lc)

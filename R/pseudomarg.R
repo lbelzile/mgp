@@ -8,7 +8,8 @@
 #' @param ntot total number of observations for Poisson or binomial model, if \code{dat} consists only of exceedances
 #' @param model dependence model, either of \code{"br"}, \code{"xstud"} or \code{"lgm"}, in which case the model uses the independence likelihood with generalized Pareto margins
 #' @param coord matrix of coordinates, with longitude and latitude in the first two columns and additional covariates for the latent Gaussian model
-#' @param fixloc logical; should the location parameter be fixed to zero. Default to \code{TRUE}.
+#' @param blockupsize size of block for updates of the scale parameter; \code{ncol(dat)} yields individual updates
+#' @param censor logical; should censored likelihood be used? Default to \code{TRUE}
 #' @param start named list with starting values for the parameters, with arguments:
 #' \itemize{
 #' \item\code{scale}: a \code{D} vector of scale parameters, strictly positive.
@@ -28,14 +29,19 @@
 #' @param thin thining parameter; only every \code{thin} iteration is saved
 #' @param burnin number of initial parameters for adaptation and discarded values.
 #' @param verbose report current values via print every \code{verbose} iterations.
-#' @param indupdate logical; should parameter values be updated one at a time.
 #' @param filename name of file for save.
 #' @param keepburnin logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.
 #' @param wd working directory for saving intermediate results from simulations
+#' @inheritDotParams clikmgp
 #' @return a list with \code{res} containing the results of the chain
-mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
-                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, indupdate = TRUE, censor = TRUE, filename,
-                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L,  ...){
+mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
+                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, censor = TRUE, filename,
+                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L, wd = ".", ...){
+
+  slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
+  slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
+  filename <- paste0(ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
+
   B <- numiter * thin + burnin
   n <- nrow(dat)
   D <- ncol(dat)
@@ -63,19 +69,25 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
   Xm <- cbind(1, scale(as.matrix(coord)))
   di <- distg(loc = coord[,1:2], scale = 1, rho = 0)
 
-
+  ellips <- list(...)
   # Precision and generating vectors for Monte Carlo routines
-  B1 <- 151L
-  genvec1 <- mvPot::genVecQMC(p = B1, d = D - 1)$genVec
-  B2 <- 499L
-  genvec2 <- mvPot::genVecQMC(p = B2, d = D - 1)$genVec
-  mmax <- apply(dat, 2, max)
+  genvec1 <- ellips$genvec1
+  genvec2 <- ellips$genvec2
+  B1 <- ifelse(is.null(ellips$B1), 1009L, ellips$B1)
+  B2 <- ifelse(is.null(ellips$B2), 499L, ellips$B2)
+  if(is.null(genvec1)){
+    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)
+  }
+  if(is.null(genvec2)){
+    genvec2 <- mvPot::genVecQMC(B2, ncol(dat) - 1L)
+  }
+  ncores <- ifelse(is.null(ellips$ncores), 1L, ellips$ncores)
   if(censor){
     mmin <- rep(0, D)
   } else{
     mmin <- apply(dat, 2, min)
   }
-
+  mmax <- apply(dat, 2, max)
   # Independence likelihood
   indeplik <- function(par, dat, mthresh, ...){
     stopifnot(ncol(dat) == length(par) - 1L);
@@ -121,10 +133,13 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
   dep.lb <- start$dep.lb
   dep.ub <- start$dep.ub
   stopifnot(length(dep.lb) == ndep, length(dep.ub) == ndep, dep.lb < dep.ub, dep.c >= dep.lb, dep.c <= dep.ub)
-
+  dep.fun <- start$dep.fun
+  stopifnot(is.function(dep.fun))
   dep.pcov <- start$dep.pcov
   if(is.null(dep.pcov)){dep.pcov <- diag(ndep)}
-  dep.priorfn <- start$dep.prior
+  # log-prior function for the dependence parameters
+  dep.lpriorfn <- start$log.prior
+  stopifnot(is.function(dep.lpriorfn))
   if(is.null(dep.pcov)){stop("Missing `dep.prior` in `start`")}
 
 
@@ -132,7 +147,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
   if(geoaniso){
     aniso.c <- start$aniso
     aniso.pcov <- diag(1,0.2)
-    if(is.null(aniso)){
+    if(is.null(aniso.c)){
       aniso.c <- c(1.2, 0)
     }
     aniso.lb <- c(1, -Inf)
@@ -171,34 +186,46 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
 
   # Hyperpriors for Bayesian linear model
   ols <- lm(log(scale.c) ~ -1 + Xm)
-  library(geoR)
-  lan.vcov.o <- geoR::likfit(coords = loc, trend = trend.spatial(~Xm[,2] + Xm[,3] + Xm[,4]),
-                             data = log(optind$par[1:D]), cov.model = "exponential",
-                             ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
   lscale.hyp.mean.c <- ols$coef
-  lscale.hyp.sigmasq <- lan.vcov.o$sigmasq
-  lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lan.vcov.o$phi))
-
+  if(!requireNamespace("geoR", quietly = TRUE)){
+    warning("`geoR` package is not installed.")
+    lscale.hyp.tausq.c <- sum(resid(ols)^2)/ols$df.residual
+    lscale.hyp.rho.c <- max(di[lower.tri(di)])/100
+  } else{
+    lan.vcov.o <- geoR::likfit(coords = loc, trend = geoR::trend.spatial(~ -1 + Xm),
+                               data = log(scale.c), cov.model = "exponential",
+                               ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
+    lscale.hyp.rho.c <- lan.vcov.o$phi
+    lscale.hyp.tausq.c <- lan.vcov.o$sigmasq
+  }
   # Set hyperpriors for random effect on log scale
-  lscale.hyp.rho.c <- 2
+  lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
   lscale.fhyp.mean.Vinv <- diag(ncol(Xm))*5
   lscale.fhyp.mean.b <- rep(0, ncol(Xm))
   lscale.fhyp.tausq.a <- 0.5
   lscale.fhyp.tausq.b <- 0.1
   lscale.fhyp.crossprod <- c(t(lscale.fhyp.mean.b) %*% lscale.fhyp.mean.Vinv %*% lscale.fhyp.mean.b)
-
+  lscale.mu <- as.vector(Xm %*% lscale.hyp.mean.c)
   #Same, but for shape parameters if the latter are not constant in space
   if(model == "lgm"){
     if(!cshape){
-      shapelm.i <- (npar+1):(npar + ncol(Xm) + 2)
+      shapelm.i <- (npar + 1):(npar + ncol(Xm) + 2)
       npar <- npar + ncol(Xm) + 2
-      shape.vcov.o <- geoR::likfit(coords = loc, trend = trend.spatial(~Xm[,2] + Xm[,3] + Xm[,4]),
-                                   data = shape.c, cov.model = "exponential",
-                                   ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
-      shape.hyp.mean.c <- shape.vcov.o$beta
-      shape.hyp.tausq.c <- shape.vcov.o$sigmasq
-      shape.hyp.rho.c <- shape.vcov.o$phi
-      shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.vcov.o$phi))
+      ols <- lm(shape ~ -1 + Xm)
+      shape.hyp.mean.c <- ols$coef
+      if(!requireNamespace("geoR", quietly = TRUE)){
+        shape.hyp.tausq.c <- sum(resid(ols)^2)/ols$df.residual
+        shape.hyp.rho.c <- lscale.hyp.rho.c
+        shape.hyp.tausq.c <- shape.vcov.o$sigmasq
+       } else{
+        shape.vcov.o <- geoR::likfit(coords = loc, trend = geoR::trend.spatial(~ -1 + Xm),
+                                     data = shape.c, cov.model = "exponential",
+                                     ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
+        shape.hyp.rho.c <- shape.vcov.o$phi
+        shape.hyp.tausq.c <- shape.vcov.o$sigmasq
+       }
+      shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
+
       shape.mu <- as.vector(Xm %*% shape.hyp.mean.c)
       shape.fhyp.mean.Vinv <- diag(ncol(Xm))*5
       shape.fhyp.mean.b <- rep(0, ncol(Xm))
@@ -206,7 +233,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       shape.fhyp.tausq.b <- 0.1
       shape.fhyp.crossprod <- c(t(shape.fhyp.mean.b) %*% shape.fhyp.mean.Vinv %*% shape.fhyp.mean.b)
     } else{
-      shape.hyp.mean.c <- NULL
+      shape.mu <- NULL
       shape.hyp.precis.c <- NULL
       shape.hyp.tausq.c <- NULL
     }
@@ -218,10 +245,10 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       model <- match.arg(model)
       if(model == "xstud"){
         if(is.null(df)){stop("Missing `df` in `makepar` function")}
-        Sigma.c <- dep(distm, par = dep)
+        Sigma <- dep.fun(distm, par = dep)
         return(list(Sigma = Sigma, df = df))
       } else if(model == "br"){
-        Lambda.c <- dep(distm, par = dep)
+        Lambda <- dep.fun(distm, par = dep)
         return(par <- list(Lambda = Lambda))
       }
     }
@@ -252,24 +279,16 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
         # Initial evaluation of the log-likelihood
         clikmgp(dat = dat, thresh = thresh, loc = rep(0, D), scale = scale,
                 shape = shape, par = par, model = model, likt = "mgp", lambdau = lambdau,
-                B1 = B1, genvec1 = genvec1, cl = cl, ncores = ncores,
+                B1 = B1, genvec1 = genvec1, ncores = ncores,
                 numAbovePerRow = numAbovePerRow, numAbovePerCol = numAbovePerCol, censored = censored)
       }
 
     }
-    loglik.c <- loglikfn(scale.c, shape.c, par.c)
-    # log-prior function for the dependence parameters
-    dep.lpriorfn <- start$log.prior
-    stopifnot(is.function(dep.lpriorfn))
+    loglik.c <- loglikfn(scale = scale.c, shape = shape.c, par = par.c)
+
   } else if(model == "lgm"){
     # keep only marginal exceedances
     ldat <- apply(dat, 2, function(col){as.vector(col[col>0])})
-    # Log-likelihood function
-    loglikfn <- function(scale, shape, ind = 1:D, ...){
-      scale <- rep(scale, length.out = D)
-      shape <- rep(shape, length.out = D)
-      sum(sapply(ind, function(i){gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
-    }
   }
 
   # Set block update size for scale parameters
@@ -302,13 +321,13 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       order <- split(sample.int(D, size = D, replace = FALSE), f = facs)
       scale.lpriorfn <- function(scale){
         dmvnorm.precis(x = log(scale), mean = as.vector(Xm %*%  lscale.hyp.mean.c),
-                       precis = lscale.hyp.precis.c/lscale.hyp.sigmasq, logd = TRUE) - sum(log(scale))
+                       precis = lscale.hyp.precis.c/lscale.hyp.tausq.c, logd = TRUE) - sum(log(scale))
       }
-      scale.loglikfn <- function(scale){ loglikfn(scale, shape = shape.c, par = par.c)}
+      scale.loglikfn <- function(scale){ loglikfn(scael = scale, shape = shape.c, par = par.c)}
       for(k in 1:length(order)){
-        scale.lb <- pmax(-shape.c*cmax[order[[k]]], 0)
-        update <- update.mh(cur = scale.c, lb = scale.lb, ind = order[[k]], lik = scale.loglikfn,
-                            ll = loglik.c, pcov = marg.pcov, cond = FALSE, prior = scale.lpriorfn)
+        scale.lb <- pmax(-shape.c*mmax[order[[k]]], 0)
+        update <- mh.fun(cur = scale.c, lb = scale.lb, ind = order[[k]], lik.fun = scale.loglikfn,
+                            ll = loglik.c, pcov = marg.pcov, cond = FALSE, prior.fun = scale.lpriorfn)
         #Increase acceptance count, update log
         if(update$accept){
           accept[order[[k]]] <- accept[order[[k]]] + 1L
@@ -317,7 +336,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
         }
       }
     } else{
-      scale.c <- update.scale.lgm(scale.c, shape.c, ldat, lscale.mu = lscale.hyp.mean.c, lscale.precis = lscale.hyp.precis.c,
+      scale.c <- lscale.lgm(scale.c, shape.c, ldat, lscale.mu = lscale.mu, lscale.precis = lscale.hyp.precis.c,
                                   lscale.tausq = lscale.hyp.tausq.c, mmax = mmax, discount = 1, maxstep = 2)
     }
 
@@ -343,7 +362,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
     lscale.hyp.mean.c <- c(rmvnormprec(n = 1, mu = c(Mm), precis =  lscale.hyp.mean.precis/ lscale.hyp.tausq.c))
 
     #Laplace approximation for the range parameter
-    lscale.hyp.rho.c <- update.range(tau = lscale.c - c(Xm %*%lscale.hyp.mean.c), alpha = 1/lscale.hyp.tausq.c,
+    lscale.hyp.rho.c <- updt.range(tau = lscale.c - c(Xm %*%lscale.hyp.mean.c), alpha = 1/lscale.hyp.tausq.c,
                                      lambda = lscale.hyp.rho.c, di = di, a = 2, b = 2, discount = 0.4, lb = 1e-2, maxstep = 2)
     if(attributes(lscale.hyp.rho.c)$accept){ #only update is move is accepted
       lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
@@ -357,7 +376,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
         dnorm(x = shape, mean = 0, sd = 0.2, log = TRUE)
       }
       shape.loglikfn <- function(shape){ loglikfn(scale = scale.c, shape = shape, par = par.c)}
-      update <- update.mh(cur = shape.c, lb = shape.lb, ind = 1, lik = shape.loglikfn, prior = shape.lpriorfn,
+      update <- mh.fun(cur = shape.c, lb = shape.lb, ind = 1, lik.fun = shape.loglikfn, prior.fun = shape.lpriorfn,
                           ll = loglik.c, pcov = as.matrix(marg.pcov[D+1, D+1]), cond = FALSE)
       #Increase acceptance count, update log
       if(update$accept){
@@ -366,11 +385,10 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
         shape.c <- update$cur
       }
     } else{
-      shape.c <- update.shape.lgm(scale = scale.c, shape = shape.c, ldat = ldat, shape.mu = shape.hyp.mean.c, shape.precis = shape.hyp.precis.c,
-                                  shape.tausq = shape.hyp.tausq.c, mmax = mmax, discount = 1, maxstep = 0.1)
+      shape.c <- shape.lgm(scale = scale.c, shape = shape.c, ldat = ldat, shape.mu = shape.mu,
+                           shape.precis = shape.hyp.precis.c, shape.tausq = shape.hyp.tausq.c,
+                           mmax = mmax, discount = 1, maxstep = 0.1)
     }
-
-
 
     ####          UPDATE HYPERPRIORS ON SHAPE               ####
 
@@ -386,8 +404,8 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       shape.hyp.mean.c <- c(rmvnormprec(n = 1, mu = c(Mm), precis =  shape.hyp.mean.precis/ shape.hyp.tausq.c))
       shape.mu <- as.vector(Xm %*% shape.hyp.mean.c)
 
-      shape.hyp.rho.c <- update.range(tau = shape.c - c(Xm %*%shape.hyp.mean.c), alpha = 1/shape.hyp.tausq.c,
-                                      lambda = shape.hyp.rho.c, di = di, a = 2, b = 2, step = 0.5, lb = 1e-2, maxstep = 1)
+      shape.hyp.rho.c <- updt.range(tau = shape.c - c(Xm %*%shape.hyp.mean.c), alpha = 1/shape.hyp.tausq.c,
+                                      lambda = shape.hyp.rho.c, di = di, a = 2, b = 2, discount = 0.5, lb = 1e-2, maxstep = 1)
       if(attributes(lscale.hyp.rho.c)$accept){ #only update is move is accepted
         shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
       }
@@ -400,13 +418,13 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
 
     if(model == "xstud"){
       df.loglikfn <- function(df){
-        par <- list(Sigma = Sigma.c, df = df)
+        par <- list(Sigma = par.c$Sigma, df = df)
         ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
         attributes(ll)$par <- par
       }
       df.lpriorfn <- function(df){dgamma(df-1, shape = 1.5, scale = 5, log = TRUE)}
-      update <- update.mh(cur = df.c, lb = df.lb, ind = 1, lik = df.loglikfn,
-                          ll = loglik.c, pcov = df.pcov, cond = FALSE, prior = df.lpriorfn)
+      update <- mh.fun(cur = df.c, lb = df.lb, ind = 1, lik.fun = df.loglikfn,
+                          ll = loglik.c, pcov = df.pcov, cond = FALSE, prior.fun = df.lpriorfn)
       if(update$accept){
         accept[df.i] <- accept[df.i] + 1L
         par.c <-  attributes(update$ll)$par
@@ -423,7 +441,7 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       if(model == "xstud"){
         dep.loglikfn <- function(dep){
           Sigma <- dep.fun(distm.c, dep)
-          par = list(Sigma = Sigma, df = df.c)
+          par = list(Sigma = Sigma, df = par.c$df)
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
         }
@@ -437,8 +455,8 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
       # Perform first updates parameter by parameter
       if(b < min(burnin, 2000L)){
         for(i in 1:ndep){
-          update <- update.mh(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = i, lik = dep.loglikfn,
-                              ll = loglik.c, pcov = ckst * dep.pcov, cond = TRUE, prior = dep.lpriorfn)
+          update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = i, lik.fun = dep.loglikfn,
+                              ll = loglik.c, pcov = ckst * dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn)
           if(update$accept){
             par.c <-  attributes(update$ll)$par
             loglik.c <- update$ll
@@ -448,8 +466,8 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
 
         }
       } else{
-        update <- update.mh(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik = dep.loglikfn,
-                            ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, prior = dep.lpriorfn)
+        update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
+                            ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, prior.fun = dep.lpriorfn)
         if(update$accept){
           accept[dep.i] <- accept[dep.i] + 1L
           par.c <-  attributes(update$ll)$par
@@ -480,8 +498,8 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
             attributes(ll)$distm <- distm
           }
         }
-        update <- update.mh(cur = aniso.c, lb = aniso.lb, ind = 1:2, lik = aniso.loglikfn,
-                            ll = loglik.c, pcov = aniso.pcov, cond = FALSE, prior = aniso.lpriorfn)
+        update <- mh.fun(cur = aniso.c, lb = aniso.lb, ind = 1:2, lik.fun = aniso.loglikfn,
+                            ll = loglik.c, pcov = aniso.pcov, cond = FALSE, prior.fun = aniso.lpriorfn)
         if(update$accept){
           accept[aniso.i] <- accept[aniso.i] + 1L
           par.c <-  attributes(update$ll)$par
@@ -566,10 +584,14 @@ mcmcm.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "
     if(b %% 200 == 0){
       save(list =
              list(res = res, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
-                  df.pcov = df.pcov, model),  file = paste0(filename, model, ".RData"))
+                  df.pcov = df.pcov, model),  file = paste0(filename, ".RData"))
     }
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
-  save(list = list(res = res, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
-              df.pcov = df.pcov, model),  file = paste0(filename, model, ".RData"))
+  #TODO check where we save the output
+  save(list = list(res = res, time = time, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
+              df.pcov = df.pcov, model),  file = paste0(filename, ".RData"))
 }
+
+
+

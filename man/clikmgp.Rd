@@ -11,6 +11,8 @@ clikmgp(dat, thresh, mthresh = thresh, loc, scale, shape, par,
 \arguments{
 \item{dat}{matrix of observations}
 
+\item{thresh}{functional threshold for the maximum}
+
 \item{mthresh}{vector of individuals mthresholds under which observations are censored}
 
 \item{loc}{vector of location parameter for the marginal generalized Pareto distribution}
@@ -19,13 +21,15 @@ clikmgp(dat, thresh, mthresh = thresh, loc, scale, shape, par,
 
 \item{shape}{vector of shape parameter for the marginal generalized Pareto distribution}
 
-\item{par}{list of parameters, with \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.}
+\item{par}{list of parameters: \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.}
 
 \item{model}{string indicating the model family, one of \code{"log"}, \code{"br"} or \code{"xstud"}}
 
+\item{likt}{string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.}
+
 \item{lambdau}{vector of marginal rate of marginal threshold exceedance.}
 
-\item{u}{threshold for the maximum}
+\item{...}{additional arguments (see Details)}
 }
 \value{
 the value of the log-likelihood with \code{attributes} \code{expme}, giving the exponent measure
@@ -36,7 +40,7 @@ Censored likelihood for the logistic distribution and the Brown--Resnick and ext
 \details{
 Optional arguments can be passed to the function via \code{...}
 \itemize{
-\item \code{censored} matrix of booleans and \code{NA} indicating whether observations \code{Z} fall below the mthreshold \code{mthresh}
+\item \code{censored} matrix of booleans and \code{NA} indicating whether observations \code{dat} fall below the mthreshold \code{mthresh}
 \item \code{cl} cluster instance  created by \code{makeCluster} (default to \code{NULL})
 \item \code{ncors} number of cores for parallel computing of the likelihood
 \item \code{numAbovePerRow} number of observations above mthreshold (non-missing) per row

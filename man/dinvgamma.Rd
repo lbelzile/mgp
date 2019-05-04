@@ -4,16 +4,16 @@
 \alias{dinvgamma}
 \title{Inverse gamma density, parametrized in terms of shape and rate}
 \usage{
-dinvgamma(x, alpha, beta, log = TRUE)
+dinvgamma(x, shape, scale, log = TRUE)
 }
 \arguments{
 \item{x}{vector of observations}
 
-\item{log}{logical; should the log-density be returned?}
-
 \item{shape}{shape parameter, strictly positive}
 
-\item{rate}{rate parameter, strictly positive}
+\item{scale}{rate parameter, strictly positive}
+
+\item{log}{logical; should the log-density be returned?}
 }
 \description{
 Inverse gamma density, parametrized in terms of shape and rate

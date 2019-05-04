@@ -41,7 +41,7 @@ intensBR <- function(tdat, Lambda, cholPrecis = NULL){
   } else{
     A <- cholPrecis
   }
-  # Om <- t(apply(Z, 1, function(x){log(x[-1])-log(x[1])+ 2*Lambda[1,-1]}))
+  # Om <- t(apply(tdat, 1, function(x){log(x[-1])-log(x[1])+ 2*Lambda[1,-1]}))
   ldet <- - 2 * sum(log(diag(A)))
   #mu = -diag(Sigma)/2 == -semivario(di)[-1,1] == -2*Lambda[1,-1]
   N * (- 0.5 * (D - 1) * log(pi) - 0.5 * ldet) -sum(log(tdat[,-1])) - 2*sum(log(tdat[,1])) - 0.5 * sum(apply(tdat, 1, function(x){tcrossprod(t(log(x[-1]) - log(x[1]) + Lambda[1,-1]) %*% A)}))
@@ -121,6 +121,8 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1){
 #' @param scale vector of scale parameter for the marginal generalized Pareto distribution
 #' @param shape vector of shape parameter for the marginal generalized Pareto distribution
 #' @param lambdau vector of marginal rate of marginal threshold exceedance.
+#' @param likt string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.
+#' @param ... additional arguments (see Details)
 #' @param par list of parameters: \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.
 #' @param model string indicating the model family, one of \code{"log"}, \code{"br"} or \code{"xstud"}
 #' @note The location and scale parameters are not identifiable unless one of them is fixed.
@@ -138,9 +140,9 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1){
 likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud","log"),
                       likt = c("mgp","pois","binom"), lambdau = 1, ...){
   #Rename arguments
-  Z <- dat
-  N <- nrow(Z)
-  D <- ncol(Z)
+  tdat <- dat
+  N <- nrow(dat)
+  D <- ncol(dat)
   A <- rep(scale, length.out = D)
   B <- rep(loc, length.out = D)
   xi <- rep(shape, length.out = D)
@@ -162,8 +164,8 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
    if(alpha > 1){ alpha <- 1/alpha}
    if(alpha < 0){ stop("Invalid `par`")}
   }
-  stopifnot(is.matrix(Z), ncol(Z) > 1)
-  if(length(thresh) < ncol(Z)){ thresh <- rep(thresh, length.out = ncol(Z))}
+  stopifnot(is.matrix(tdat), ncol(tdat) > 1)
+  if(length(thresh) < ncol(tdat)){ thresh <- rep(thresh, length.out = ncol(tdat))}
   ellips <- list(...)
   if(likt == "pois"){
     ntot <- ellips$ntot
@@ -192,52 +194,49 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
   }
 
   if(is.null(mmax)){
-    mmax <- apply(Z, 2, max, na.rm = TRUE)
+    mmax <- apply(tdat, 2, max, na.rm = TRUE)
   }
   if(is.null(mmin)){
-    mmin <- apply(Z, 2, min, na.rm = TRUE)
+    mmin <- apply(tdat, 2, min, na.rm = TRUE)
   }
   #Check for marginal constraints
   if(!isTRUE(all(ifelse(xi < 0, A+(xi*mmax-B) > 0, A+(xi*mmin-B) > 0)))){
    return(-1e10)
   }
   # Compute marginal transformation and Jacobian
-  yu <- rep(0, D)
-  jac <-  - sum(numAbovePerCol * (log(A) + log(lambdau)))
+  tu <- rep(0, D)
+  jac <-  - N * sum((log(A) + log(lambdau)))
   for(j in 1:D){
     if(abs(xi[j]) > 1e-5){
       if(model == "br"){
-        Z[,j] <- log(pmax(0, 1 + xi[j] * (dat[,j] - B[j])/A[j]))
-        jac <- jac + (1/xi[j] - 1) * sum(Z[!censored[,j],j])
-        Z[,j] <- (1/xi[j])*Z[,j] - log(lambdau[j])
+        tdat[,j] <- log(pmax(0, 1 + xi[j] * (dat[,j] - B[j])/A[j]))
+        jac <- jac + (1/xi[j] - 1) * sum(tdat[,j])
+        tdat[,j] <- (1/xi[j])*tdat[,j] - log(lambdau[j])
       }  else {
-        Z[,j] <- pmax(0, (1 + xi[j] * (dat[,j] - B[j])/A[j]))
-        jac <- jac + (1/xi[j] - 1) * sum(log(Z[!censored[,j],j]))
-        Z[,j] <- Z[,j]^(1/xi[j])/lambdau[j]
+        tdat[,j] <- pmax(0, (1 + xi[j] * (dat[,j] - B[j])/A[j]))
+        jac <- jac + (1/xi[j] - 1) * sum(log(tdat[,j]))
+        tdat[,j] <- tdat[,j]^(1/xi[j])/lambdau[j]
       }
       # Map thresholds
-      yu[j] <-  (1 + xi[j] * (thresh - B[j])/A[j])^(1/xi[j])/lambdau[j]
+      tu[j] <-  (1 + xi[j] * (thresh - B[j])/A[j])^(1/xi[j])/lambdau[j]
     } else { #xi is zero
-      Z[,j] <-  (dat[,j] - B[j])/A[j] # this is a transformation onto log scale
+      tdat[,j] <-  (dat[,j] - B[j])/A[j] # this is a transformation onto log scale
       # Jacobian of marginal transformation - for both models
-      jac <- jac + sum(Z[!censored[,j],j])
-      Z[,j] <- Z[,j]  - log(lambdau[j])
+      jac <- jac + sum(tdat[,j])
+      tdat[,j] <- tdat[,j]  - log(lambdau[j])
       if(model != "br"){
-        Z[,j] <- exp(Z[,j])
+        tdat[,j] <- exp(tdat[,j])
       }
       # Map thresholds
-       yu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
+       tu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
     }
   }
-
-
-
   if(model == "br"){
     intens <- intensBR(tdat = tdat, Lambda = Lambda)
-    exponentMeasure <- sum(.weightsBR(z = yu, Lambda = Lambda, prime = B1, method = "mvPot", genvec = genvec1, nrep = 1)/yu)
+    exponentMeasure <- sum(.weightsBR(z = tu, Lambda = Lambda, prime = B1, method = "mvPot", genvec = genvec1, nrep = 1)/tu)
   } else if(model == "xstud"){
     intens <- intensXstud(tdat = tdat, df = df, Sigma = Sigma)
-    exponentMeasure <- sum(.weightsXstud(z =  yu, Sigma = Sigma, df = nu, method = "mvPot", prime = B1, genvec = genvec1, nrep = 1)/yu)
+    exponentMeasure <- sum(.weightsXstud(z =  tu, Sigma = Sigma, df = df, method = "mvPot", prime = B1, genvec = genvec1, nrep = 1)/tu)
   } else if(model == "log"){
     lVfunlog <- function(x, alpha){
       if(is.null(dim(x))){
@@ -270,20 +269,14 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
 #'
 #' Censored likelihood for the logistic distribution and the Brown--Resnick and extremal Student processes.
 #'
-#' @param dat matrix of observations
-#' @param u threshold for the maximum
+#' @inheritParams likmgp
 #' @param mthresh vector of individuals mthresholds under which observations are censored
-#' @param loc vector of location parameter for the marginal generalized Pareto distribution
-#' @param scale vector of scale parameter for the marginal generalized Pareto distribution
-#' @param shape vector of shape parameter for the marginal generalized Pareto distribution
-#' @param lambdau vector of marginal rate of marginal threshold exceedance.
-#' @param par list of parameters, with \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.
-#' @param model string indicating the model family, one of \code{"log"}, \code{"br"} or \code{"xstud"}
+#' @param ... additional arguments (see Details)
 #' @note The location and scale parameters are not identifiable unless one of them is fixed.
 #' @details
 #' Optional arguments can be passed to the function via \code{...}
 #' \itemize{
-#' \item \code{censored} matrix of booleans and \code{NA} indicating whether observations \code{Z} fall below the mthreshold \code{mthresh}
+#' \item \code{censored} matrix of booleans and \code{NA} indicating whether observations \code{dat} fall below the mthreshold \code{mthresh}
 #' \item \code{cl} cluster instance  created by \code{makeCluster} (default to \code{NULL})
 #' \item \code{ncors} number of cores for parallel computing of the likelihood
 #' \item \code{numAbovePerRow} number of observations above mthreshold (non-missing) per row
@@ -299,9 +292,9 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
 clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model = c("br", "xstud", "log"),
                        likt = c("mgp","pois","binom"), lambdau = 1, ...){
   #Rename arguments
-  Z <- dat
-  N <- nrow(Z)
-  D <- ncol(Z)
+  tdat <- dat
+  N <- nrow(dat)
+  D <- ncol(dat)
   A <- rep(scale, length.out = D)
   B <- rep(loc, length.out = D)
   xi <- rep(shape, length.out = D)
@@ -323,8 +316,8 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
     if(alpha > 1){ alpha <- 1/alpha}
     if(alpha < 0){ stop("Invalid `par`")}
   }
-  stopifnot(is.matrix(Z), ncol(Z) > 1)
-  if(length(mthresh) < ncol(Z)){ mthresh <- rep(mthresh, length.out = ncol(Z))}
+  stopifnot(is.matrix(tdat), ncol(tdat) > 1)
+  if(length(mthresh) < ncol(tdat)){ mthresh <- rep(mthresh, length.out = ncol(tdat))}
   ellips <- list(...)
   if(likt == "pois"){
     ntot <- ellips$ntot
@@ -353,9 +346,9 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
   ncores <- ifelse(is.null(ellips$ncores), 1L, ellips$ncores)
   censored <- ellips$censored
   if(is.null(censored)){
-   censored <- matrix(FALSE, nrow = nrow(Z), ncol = ncol(Z))
-   for(j in 1:ncol(Z)){
-     censored[,j] <- Z[,j] < mthresh[j]
+   censored <- matrix(FALSE, nrow = nrow(tdat), ncol = ncol(tdat))
+   for(j in 1:ncol(tdat)){
+     censored[,j] <- tdat[,j] < mthresh[j]
    }
   }
 
@@ -372,65 +365,65 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
     numAbovePerCol <- N - colSums(censored)
   }
   if(is.null(mmax)){
-    mmax <- apply(Z, 2, max, na.rm = TRUE)
+    mmax <- apply(tdat, 2, max, na.rm = TRUE)
   }
-  stopifnot(dim(Z) == dim(censored), length(numAbovePerRow) == N)
+  stopifnot(dim(tdat) == dim(censored), length(numAbovePerRow) == N)
   # Check boundary constraints for the support of the GP distribution
   # if(isTRUE(any(ifelse(shape >= 0, margmthresh < (B - shape / A), mmax > (B - shape/A))))){
   #  return(-Inf)
   # }
   # Compute marginal transformation and Jacobian
-  yu <- rep(0, D)
+  tu <- rep(0, D)
   yth <- rep(0, D)
   jac <-  - sum(numAbovePerCol * (log(A) + log(lambdau)))
   for(j in 1:D){
     if(abs(xi[j]) > 1e-5){
       if(model == "br"){
-        Z[,j] <- log(pmax(0, 1 + xi[j] * (dat[,j] - B[j])/A[j]))
-        jac <- jac + (1/xi[j] - 1) * sum(Z[!censored[,j],j])
-        Z[,j] <- (1/xi[j])*Z[,j] - log(lambdau[j])
+        tdat[,j] <- log(pmax(0, 1 + xi[j] * (dat[,j] - B[j])/A[j]))
+        jac <- jac + (1/xi[j] - 1) * sum(tdat[!censored[,j],j])
+        tdat[,j] <- (1/xi[j])*tdat[,j] - log(lambdau[j])
       }  else {
-        Z[,j] <- pmax(0, (1 + xi[j] * (dat[,j] - B[j])/A[j]))
-      jac <- jac + (1/xi[j] - 1) * sum(log(Z[!censored[,j],j]))
-        Z[,j] <- Z[,j]^(1/xi[j])/lambdau[j]
+        tdat[,j] <- pmax(0, (1 + xi[j] * (dat[,j] - B[j])/A[j]))
+      jac <- jac + (1/xi[j] - 1) * sum(log(tdat[!censored[,j],j]))
+        tdat[,j] <- tdat[,j]^(1/xi[j])/lambdau[j]
       }
       # Map mthresholds
       yth[j] <- (1 + xi[j] * (mthresh[j] - B[j])/A[j])^(1/xi[j])/lambdau[j]
-      yu[j] <-  (1 + xi[j] * (thresh - B[j])/A[j])^(1/xi[j])/lambdau[j]
+      tu[j] <-  (1 + xi[j] * (thresh - B[j])/A[j])^(1/xi[j])/lambdau[j]
     } else { #xi is zero
-        Z[,j] <-  (dat[,j] - B[j])/A[j] # this is a transformation onto log scale
+        tdat[,j] <-  (dat[,j] - B[j])/A[j] # this is a transformation onto log scale
       # Jacobian of marginal transformation - for both models
-      jac <- jac + sum(Z[!censored[,j],j])
-      Z[,j] <- Z[,j]  - log(lambdau[j])
+      jac <- jac + sum(tdat[!censored[,j],j])
+      tdat[,j] <- tdat[,j]  - log(lambdau[j])
       if(model != "br"){
-        Z[,j] <- exp(Z[,j])
+        tdat[,j] <- exp(tdat[,j])
       }
       # Map mthresholds
       yth[j] <- exp((mthresh[j] - B[j]) / A[j])/lambdau[j]
-      yu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
+      tu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
     }
   }
-  #test <- mvPot::censoredLikelihoodBR(obs = split(exp(Z), row(exp(Z))), loc = sites, vario = varioloc, thresh = yu, p = B1, vec = genvec1)
+  #test <- mvPot::censoredLikelihoodBR(obs = split(exp(tdat), row(exp(tdat))), loc = sites, vario = varioloc, thresh = tu, p = B1, vec = genvec1)
   #return(-test + jac)
   #
   # par(mfrow = c(1,1))
   #  wexc <- which(apply(t(t(rain[,stid]) - us), 1, max) > thresh)
-  #  plot(log(1/(1-(rank(as.vector(rain[,stid[j]]))/(ellips$ntot+1))))[wexc], Z[,j], xlab = "theoretical",ylab = "empirical", main = shape[1]);
+  #  plot(log(1/(1-(rank(as.vector(rain[,stid[j]]))/(ellips$ntot+1))))[wexc], tdat[,j], xlab = "theoretical",ylab = "empirical", main = shape[1]);
   #  abline(0,1)
   #  # b <- spunif(x = as.vector(rain[,stid[j]]),mthresh = us[j], scale = scale[j], shape = shape[j])
-  #  # plot(log(1/(1-b[wexc])), Z[,j]); abline(0,1)
+  #  # plot(log(1/(1-b[wexc])), tdat[,j]); abline(0,1)
   # abline(h = log(yth[j]))
   #Use empirical transformation
   # jac <- 0
   # for(j in 1:D){
-  #   Z[,j] <- log(1/(1-(rank(as.vector(rain[,stid[j]]))/(ellips$ntot+1))))[wexc]
+  #   tdat[,j] <- log(1/(1-(rank(as.vector(rain[,stid[j]]))/(ellips$ntot+1))))[wexc]
   # }
   if(model != "log"){
   likelihood_xstud <- function(i){
     if (i < N + 1) {
       k <- numAbovePerRow[i]
       ab <- which(!censored[i,]) #uncensored
-      Zin <- Z[i, ab]^(1/df)
+      Zin <- tdat[i, ab]^(1/df)
       if(k > 1){
         cholS <- chol(Sigma[ab, ab])
         logdetS <- 2*sum(log(diag(cholS)))
@@ -451,20 +444,20 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
                                                       genVec = genvec2[1:length(muC)], nrep = M2, antithetic = antithetic)[1]
       } else{
         contribBelow <- 1
-      } #fixed 19-04-2019 to account for the fact that Z^(1/df) already
+      } #fixed 19-04-2019 to account for the fact that tdat^(1/df) already
       contribAbove <- - (k + df) / 2 * log(kst) + (1 - df) * sum(log(Zin)) + lgamma((df + k) / 2) -
         lgamma((df + 1) / 2) - 0.5 * logdetS - (k - 1) * log(df) - (k - 1) / 2 * log(pi)
       return(log(contribBelow) + contribAbove)
     } else if(i > N){
       #Compute exponent measure
       j <- i - N
-      mvPot::mvTProbQuasiMonteCarlo(p = B1, upperBound = (exp((log(yu[-j]) - log(yu[j]))/df) - Sigma[-j, j]),
+      mvPot::mvTProbQuasiMonteCarlo(p = B1, upperBound = (exp((log(tu[-j]) - log(tu[j]))/df) - Sigma[-j, j]),
                                     cov = (Sigma[-j, -j] - Sigma[-j, j, drop = FALSE] %*% Sigma[j, -j, drop = FALSE])/(df + 1),
                                     nu = df + 1, genVec = genvec1, nrep = M1, antithetic = antithetic)[1]
     }
   }
   likelihood_br <- function(i){
-    #Note: the vector Z is already on the log-scale
+    #Note: the vector tdat is already on the log-scale
     if(i < N + 1){
       be <- which(censored[i,])
       ab <- which(!censored[i,])
@@ -476,18 +469,18 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
       be2 <- be - I(be > ab[1])
       ab2 <- ab[-1] - I(ab[-1] > ab[1])
       SigmaD <- outer(2*Lambda[ab[1], - ab[1]], 2*Lambda[ab[1], - ab[1]], "+") - 2*Lambda[-ab[1], - ab[1]]
-      muD <- -2 * Lambda[ab[1], - ab[1]] + Z[i, ab[1]]
+      muD <- -2 * Lambda[ab[1], - ab[1]] + tdat[i, ab[1]]
       if(numAbovePerRow[i] == 1){ #all but one observation fall below mthreshold, so censored
         contribBelow <- mvPot::mvtNormQuasiMonteCarlo(p = B2, upperBound = log(yth[-ab]) - muD, cov = SigmaD, genVec = genvec2[1:length(muD)], nrep = M2, antithetic = antithetic)[1]
-        logcontribAbove <- -2*Z[i, ab[1]]
+        logcontribAbove <- -2*tdat[i, ab[1]]
       } else if(numAbovePerRow[i] == D){ # all above!
         contribBelow <- 1
-        logcontribAbove <- -Z[i, ab[1]] - sum(Z[i,]) + dmvnrm_arma(x = Z[i, ab[-1], drop = FALSE], mean = muD, sigma = SigmaD, logd = TRUE)
+        logcontribAbove <- -tdat[i, ab[1]] - sum(tdat[i,]) + mgp::.dmvnorm_arma(x = tdat[i, ab[-1], drop = FALSE], mean = muD, sigma = SigmaD, logd = TRUE)
       } else {
-        # return(- sum(Z[i,ab]) - Z[i,ab[1]] + dcondmvtnorm(x = Z[i,-ab[1]], ind = be2, ubound = log(yth[-ab]), mu = muD, Sigma = SigmaD, model = "norm", n = 500, log = TRUE))
-        logcontribAbove <- - sum(Z[i,ab]) - Z[i,ab[1]] +
-          dmvnrm_arma(x = Z[i, ab[-1], drop = FALSE], mean = as.vector(muD[ab2]), logd = TRUE, sigma = as.matrix(SigmaD[ab2, ab2]))
-        muC <- c(muD[be2] + SigmaD[be2, ab2] %*% solve(SigmaD[ab2, ab2]) %*% (Z[i, ab[-1]] -  muD[ab2]))
+        # return(- sum(tdat[i,ab]) - tdat[i,ab[1]] + dcondmvtnorm(x = tdat[i,-ab[1]], ind = be2, ubound = log(yth[-ab]), mu = muD, Sigma = SigmaD, model = "norm", n = 500, log = TRUE))
+        logcontribAbove <- - sum(tdat[i,ab]) - tdat[i,ab[1]] +
+          mgp::.dmvnorm_arma(x = tdat[i, ab[-1], drop = FALSE], mean = as.vector(muD[ab2]), logd = TRUE, sigma = as.matrix(SigmaD[ab2, ab2]))
+        muC <- c(muD[be2] + SigmaD[be2, ab2] %*% solve(SigmaD[ab2, ab2]) %*% (tdat[i, ab[-1]] -  muD[ab2]))
         contribBelow <- mvPot::mvtNormQuasiMonteCarlo(p = B2, upperBound = log(yth[-ab]) - muC, cov = schurcompC(SigmaD, ab2),
                                                       genVec = genvec2[1:length(muC)], nrep = M2, antithetic = antithetic)[1]
       }
@@ -495,15 +488,15 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
     } else if(i > N){
       #Compute exponent measure
       j <- i - N
-      mvPot::mvtNormQuasiMonteCarlo(p = B1, upperBound = (2 * Lambda[-j, j] + log(yu[-j]) - log(yu[j])), cov = 2 * (outer(Lambda[-j, j], Lambda[j, -j], FUN = "+") - Lambda[-j, -j]), genVec = genvec1[1:(D-1)],  nrep = M1, antithetic = antithetic)[1]
+      mvPot::mvtNormQuasiMonteCarlo(p = B1, upperBound = (2 * Lambda[-j, j] + log(tu[-j]) - log(tu[j])), cov = 2 * (outer(Lambda[-j, j], Lambda[j, -j], FUN = "+") - Lambda[-j, -j]), genVec = genvec1[1:(D-1)],  nrep = M1, antithetic = antithetic)[1]
     }
   }
-  if(ncores > 1){
-    pro <- mclapply(X = 1:(D + N), FUN = switch(model, br = likelihood_br, xstud = likelihood_xstud))
+  if(ncores > 1 && !requireNamespace("parallel", quietly = TRUE)){
+    pro <- parallel::mclapply(X = 1:(D + N), FUN = switch(model, br = likelihood_br, xstud = likelihood_xstud))
   } else {
     pro <- lapply(X = 1:(D + N), FUN = switch(model, br = likelihood_br, xstud = likelihood_xstud))
   }
-    exponentMeasure <- sum(unlist(pro)[(1 + N):(D + N)] / yu)
+    exponentMeasure <- sum(unlist(pro)[(1 + N):(D + N)] / tu)
     intens <- sum(unlist(pro)[1:N])
 } else{# Model is logistic
   lVfunlog <- function(x, alpha){
@@ -514,7 +507,7 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
     }
   }
   cdat <- t(apply(tdat, 1, function(x){pmax(yth, x)}))
-  lVu <- lVfunlog(x = yu, alpha = alpha)
+  lVu <- lVfunlog(x = tu, alpha = alpha)
   lVx <- lVfunlog(x = cdat, alpha = alpha)
   lfalfacto1 <- function(x, s){sum(log(abs(seq(x, x-s+1, by = -1))))}
   ldVfunlog <- function(x, censored, alpha, numAbovePerRow, lV){
@@ -550,9 +543,10 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
 #' @importFrom TruncatedNormal mvTqmc
 #' @importFrom stats rWishart
 #' @examples
+#' \dontrun{
 #' #Extremal Student
 #' Sigma <- stats::rWishart(n = 1, df = 20, Sigma = diag(10))[,,1]
-#' expme(z = rep(1, ncol(Sigma)), par = list(Sigma = cov2cor(Sigma)), df = 3, model = "xstud")
+#' expme(z = rep(1, ncol(Sigma)), par = list(Sigma = cov2cor(Sigma), df = 3), model = "xstud")
 #' #Brown-Resnick model
 #' D <- 5L
 #' loc <- cbind(runif(D), runif(D))
@@ -560,9 +554,10 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
 #' semivario <- function(d, alpha = 1.5, lambda = 1){(d/lambda)^alpha}
 #' Vmat <- semivario(di)
 #' Lambda <- Vmat[-1,-1]/2
-#' expme(z <- rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")
+#' expme(z = rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")
 #' Sigma <- outer(Vmat[-1, 1], Vmat[1, -1], "+") - Vmat[-1, -1]
-#' expme(z <- rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")
+#' expme(z = rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")
+#' }
 expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
                   method = c("TruncatedNormal", "mvtnorm", "mvPot")){
   model <- match.arg(model[1], choices = c("log", "hr", "br", "xstud"))
@@ -600,11 +595,12 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
     if(any(c(is.null(m), is.null(Sigma),  ncol(Sigma) != nrow(Sigma)))){
       stop("Invalid or missing arguments for the Huesler-Reiss model")
     }
+    D <- ncol(Sigma)
     Sigmainv <- solve(Sigma)
     q <- Sigmainv %*% rep(1, D)
     Q <- (Sigmainv - q %*% t(q) / sum(q))
     l <- c(Sigmainv %*% (((m %*% q - 1)/sum(q))[1] * rep(1, D) - m))
-    return(.expmeHR(z = z, L = L, Q = Q, method = method))
+    return(.expmeHR(z = z, L = l, Q = Q, method = method))
   } else if(model == "xstud"){
     Sigma <- par$Sigma
     df <- par$df
@@ -690,11 +686,12 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
   } else if (method == "mvPot"){
     if(!is.null(ellipsis$prime)){
       prime <- ellipsis$prime
-    }
-    if(!is.null(ellipsis$genvec)){
-      genVec <- ellipsis$genvec
-      stopifnot(length(genVec) == D-1)
+      if(!is.null(ellipsis$genvec)){
+        genVec <- ellipsis$genvec
+        stopifnot(length(genVec) == D-1)
+      }
     } else{
+      prime <- 499L
       genVec <- mvPot::genVecQMC(p = prime, D - 1)$genVec
     }
     for(j in 1:D){
@@ -715,6 +712,7 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
 
 .weightsBR_WT <- function(z, Sigma, method = c("mvtnorm", "mvPot", "TruncatedNormal"), ...){
   method <- match.arg(method, choices = c("mvtnorm", "mvPot", "TruncatedNormal"))[1]
+  ellipsis <- list(...)
   D <- length(z)
   stopifnot(ncol(Sigma) == D | nrow(Sigma) == D)
   weights <- rep(0, D)
@@ -733,11 +731,12 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
     } else if (method == "mvPot"){
       if(!is.null(ellipsis$prime)){
         prime <- ellipsis$prime
-      }
-      if(!is.null(ellipsis$genvec)){
-        genVec <- ellipsis$genvec
-        stopifnot(length(genVec) == D-1)
+        if(!is.null(ellipsis$genvec)){
+          genVec <- ellipsis$genvec
+          stopifnot(length(genVec) == D-1)
+        }
       } else{
+        prime <- 499L
         genVec <- mvPot::genVecQMC(p = prime, D - 1)$genVec
       }
       weights[j] <- mvPot::mvtNormQuasiMonteCarlo(p = prime,
@@ -755,6 +754,7 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
 
 .weightsXstud <- function(z, Sigma, df, method = c("mvtnorm", "mvPot", "TruncatedNormal"), ...){
   method <- match.arg(method, choices = c("mvtnorm", "mvPot", "TruncatedNormal"))[1]
+  ellipsis <- list(...)
   D <- nrow(Sigma)
   stopifnot(nrow(Sigma) == length(z))
   weights <- rep(0, D)
@@ -767,11 +767,12 @@ expme <- function(z, par, model = c("log", "hr", "br", "xstud"),
   } else if (method == "mvPot"){
     if(!is.null(ellipsis$prime)){
       prime <- ellipsis$prime
-    }
-    if(!is.null(ellipsis$genvec)){
-      genVec <- ellipsis$genvec
-      stopifnot(length(genVec) == D-1)
+      if(!is.null(ellipsis$genvec)){
+        genVec <- ellipsis$genvec
+        stopifnot(length(genVec) == D-1)
+      }
     } else{
+      prime <- 499L
       genVec <- mvPot::genVecQMC(p = prime, D - 1)$genVec
     }
     for(j in 1:D){

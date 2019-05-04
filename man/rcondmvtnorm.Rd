@@ -5,7 +5,7 @@
 \title{Conditional samples of Gaussian or Student subvectors}
 \usage{
 rcondmvtnorm(n = 1L, ind, x, lbound = rep(-Inf, length(ind)),
-  ubound = rep(Inf, length(ind)), mu, Sigma, df = NULL,
+  ubound = rep(Inf, length(ind)), mu, sigma, df = NULL,
   model = c("norm", "stud"))
 }
 \arguments{
@@ -21,7 +21,7 @@ rcondmvtnorm(n = 1L, ind, x, lbound = rep(-Inf, length(ind)),
 
 \item{mu}{\code{d+p} vector of location parameters}
 
-\item{Sigma}{\code{d+p} by \code{d+p} scale matrix}
+\item{sigma}{\code{d+p} by \code{d+p} scale matrix}
 
 \item{df}{degrees of freedom of the \code{d+p} dimensional Student process}
 
@@ -33,6 +33,6 @@ an n by d matrix of conditional simulations
 \description{
 The function samples (truncated) Gaussian or Student vectors
 corresponding to indices \code{ind} given the values at the remaining index.
-The location vector \code{mu} and the scale matrix \code{Sigma} are those of the \eqn{d+p} vector.
+The location vector \code{mu} and the scale matrix \code{sigma} are those of the \eqn{d+p} vector.
 The routine relies on the CDF approximation based on minimax exponential tilting implemented in the \code{TruncatedNormal} package.
 }

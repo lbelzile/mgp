@@ -5,15 +5,15 @@
 \title{Conditional distribution of Gaussian or Student subvectors}
 \usage{
 pcondmvtnorm(n = 500, ind, x, lbound = rep(-Inf, length(ind)),
-  ubound = rep(Inf, length(ind)), mu, Sigma, df = NULL,
+  ubound = rep(Inf, length(ind)), mu, sigma, df = NULL,
   model = c("norm", "stud"), log = FALSE)
 }
 \arguments{
 \item{n}{sample size for simulations. Default to 500.}
 
-\item{ind}{a \code{d} vector of indices with integer entries in \eqn{\{1, \ldots, d+p\}} for which to compute the density}
+\item{ind}{\code{d} vector of indices with integer entries in \eqn{\{1, \ldots, d+p\}} for which to compute the distribution function}
 
-\item{x}{a \code{p} vector with the values of process at remaining coordinates}
+\item{x}{\code{d+p} vector}
 
 \item{lbound}{\code{d} vector of lower bounds for truncation}
 
@@ -21,7 +21,7 @@ pcondmvtnorm(n = 500, ind, x, lbound = rep(-Inf, length(ind)),
 
 \item{mu}{\code{d+p} vector of location parameters}
 
-\item{Sigma}{\code{d+p} by \code{d+p} scale matrix}
+\item{sigma}{\code{d+p} by \code{d+p} scale matrix}
 
 \item{df}{degrees of freedom of the \code{d+p} dimensional Student process}
 
@@ -35,6 +35,6 @@ conditional distribution function for the components \code{ind} at \code{x[ind]}
 \description{
 The function computes the conditional distribution of the sub-components in \code{ind} given the rest and
 returns the distribution function of the truncated Gaussian or Student components.
-The location vector \code{mu} and the scale matrix \code{Sigma} are those of the \eqn{d+p} vector.
+The location vector \code{mu} and the scale matrix \code{sigma} are those of the \eqn{d+p} vector.
 The routine relies on the CDF approximation based on minimax exponential tilting implemented in the \code{TruncatedNormal} package.
 }

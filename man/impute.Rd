@@ -10,6 +10,8 @@ impute(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1,
 \arguments{
 \item{dat}{matrix of observations}
 
+\item{thresh}{functional threshold for the maximum}
+
 \item{mthresh}{vector of individuals mthresholds under which observations are censored}
 
 \item{loc}{vector of location parameter for the marginal generalized Pareto distribution}
@@ -22,9 +24,11 @@ impute(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1,
 
 \item{riskr}{string giving the risk region, either \code{max} or \code{sum}}
 
-\item{par}{list of parameters, with \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.}
+\item{par}{list of parameters: \code{alpha} for the logistic model, \code{Lambda} for the Brown--Resnick model or else \code{Sigma} and \code{df} for the extremal Student.}
 
 \item{map}{logical; should imputed data be returned on the unit Pareto scale? Default to \code{FALSE}}
+
+\item{...}{additional arguments (see Details)}
 }
 \value{
 a matrix of observations with imputed values in place of censored components.

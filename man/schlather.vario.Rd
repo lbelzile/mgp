@@ -4,16 +4,16 @@
 \alias{schlather.vario}
 \title{Variogram model of Schlather and Moreva}
 \usage{
-schlather.vario(hmat, alpha, beta, scale = 1)
+schlather.vario(h, alpha, beta, scale = 1)
 }
 \arguments{
+\item{h}{vector or matrix of pairwise distances}
+
 \item{alpha}{smoothness parameter}
 
 \item{beta}{shape parameter, must be less than 2}
 
 \item{scale}{scale parameter}
-
-\item{h}{vector or matrix of pairwise distances}
 }
 \value{
 a vector or matrix of variogram values of the same length as \code{h}

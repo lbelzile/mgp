@@ -22,7 +22,11 @@ likmgp(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
 
 \item{model}{string indicating the model family, one of \code{"log"}, \code{"br"} or \code{"xstud"}}
 
+\item{likt}{string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.}
+
 \item{lambdau}{vector of marginal rate of marginal threshold exceedance.}
+
+\item{...}{additional arguments (see Details)}
 }
 \value{
 the value of the log-likelihood with \code{attributes} \code{expme}, giving the exponent measure

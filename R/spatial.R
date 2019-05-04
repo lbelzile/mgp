@@ -50,7 +50,7 @@ powerexp.cor <- function(h, alpha = 1, scale = 1){
 #' @param scale scale parameter
 #' @return a vector or matrix of variogram values of the same length as \code{h}
 #' @export
-schlather.vario <- function(hmat, alpha, beta, scale = 1){
+schlather.vario <- function(h, alpha, beta, scale = 1){
   stopifnot(length(alpha) == 1, length(beta) == 1, length(scale) == 1)
   if(alpha <= 0 || alpha >2-1e-10){
     stop("Invalid shape parameter in `schlather.vario`")

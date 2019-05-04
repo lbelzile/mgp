@@ -60,13 +60,12 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
   }
 
   #if this is true, only one conditional simulation is needed
-  # partSumAbove <- rowSums(dat * I(!censored) ) >= u
   stopifnot(dim(tdat) == dim(censored), length(numAbovePerRow) == N)
   # if(model == "xstud"){
   #   for(i in 1:N){
   #     if(numAbovePerRow[i] < D){
   #       ind = which(censored[i,])
-  #       Zin <- Z[i,!censored[i,]]^(1/df)
+  #       Zin <- tdat[i,!censored[i,]]^(1/df)
   #       k <- D - length(ind)
   #       kst <- c(Zin %*% solve(Sigma[-ind, -ind]) %*% Zin) / (k + df)
   #       muC <-  c(Sigma[ind, -ind]  %*% solve(Sigma[-ind, -ind]) %*% Zin) #TODO check this
@@ -77,8 +76,8 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
   #                                                    Sig =  SigC, df = df + k, n = ifelse(partSumAbove[i], 1, 10)))
   #         for(k in 1:nrow(prop)){
   #           prop <- sign(prop) * abs(prop)^df
-  #           Z[i,censored[i,]] <-  prop[k,]
-  #           inriskregion <- sum(scale*(pmax(0,Z[,i])^shape-1)/shape + loc) > u
+  #           tdat[i,censored[i,]] <-  prop[k,]
+  #           inriskregion <- sum(scale*(pmax(0,tdat[,i])^shape-1)/shape + loc) > thresh
   #           if(inriskregion){ break }
   #         }
   #       }
@@ -97,7 +96,7 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
         ab2 <- ab[-1] - I(ab[-1] > ab[1])
         SigmaD <- outer(2 * Lambda[ab[1], - ab[1]], 2 * Lambda[ab[1], - ab[1]], "+") - 2 * Lambda[-ab[1], - ab[1]]
         muD <- - 2 * Lambda[ab[1], - ab[1]]
-        thD <- log(mt[be]) - log(Z[i, ab[1]])
+        thD <- log(mt[be]) - log(tdat[i, ab[1]])
         inriskregion <- FALSE
         while(!inriskregion){
           if(length(ab) == 1){
@@ -105,22 +104,22 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
               prop <- as.matrix(TruncatedNormal::mvrandn(n = nsimu,
                                                          l = rep(-Inf, length(be2)),
                                                          u = thD, mu = muD, Sig = SigmaD))
-            } else { #length be == 1
+            } else { #length be == 1, so D=2 and we can exactly get lower bound
               prop <- as.matrix(TruncatedNormal::mvrandn(n = 1, u = thD, mu = muD,
-                                                         Sig = SigmaD,l =  - log(tdat[i, ab[1]]) +
-                        ifelse(partSumAbove[i], -Inf, log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be]) -loc[be]))^(1/shape[be])/lambdau[be]))))
+                                                         Sig = SigmaD, l =  - log(tdat[i, ab[1]]) +
+                        log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be]) -loc[be]))^(1/shape[be])/lambdau[be])))
 
             }
           } else {# length(ab) > 1
             if(length(be) == 1){
               prop <- t(as.matrix(rcondmvtnorm(n = 1, ind = be2, model = "norm",
-                         ubound = thD, mu = muD, Sigma = SigmaD, x = log(Z[i, ab2])-log(tdat[i, ab[1]]),
-                         lbound =  - log(tdat[i, ab[1]]) + ifelse(partSumAbove[i], -Inf,
-                         log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be])))))
+                         ubound = thD, mu = muD, sigma = SigmaD, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
+                         lbound =  - log(tdat[i, ab[1]]) +
+                         log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be]))))
             } else{
               prop <- t(as.matrix(rcondmvtnorm(n = switch(riskr, max = 1, sum = 5*length(be2)),
                                                ind = be2, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
-                                               ubound = thD, mu = muD, Sigma = SigmaD, model = "norm")))
+                                               ubound = thD, mu = muD, sigma = SigmaD, model = "norm")))
             }
           }
           for(k in 1:nrow(prop)){
@@ -128,7 +127,7 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
             if(riskr == "max"){
               inriskregion <- TRUE
             } else if(riskr == "sum"){
-            inriskregion <- isTRUE(sum(scale*(tdat[i,]^shape-1)/shape + loc) > u)
+            inriskregion <- isTRUE(sum(scale*(tdat[i,]^shape-1)/shape + loc) > thresh)
             }
             if(inriskregion){break()}
           }

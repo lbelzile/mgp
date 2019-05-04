@@ -4,7 +4,7 @@
 \alias{powerexp.cor}
 \title{Power exponential correlation model}
 \usage{
-powerexp.cor(h, alpha, scale = 1)
+powerexp.cor(h, alpha = 1, scale = 1)
 }
 \arguments{
 \item{h}{vector or matrix of pairwise distances}
