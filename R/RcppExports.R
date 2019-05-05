@@ -15,7 +15,7 @@
 #' @keywords internal
 #' @export
 .dmvnorm_arma <- function(x, mean, sigma, logd = FALSE) {
-    .Call('_mgp_dmvnorm_arma', PACKAGE = 'mgp', x, mean, sigma, logd)
+    .Call(`_mgp_dmvnorm_arma`, x, mean, sigma, logd)
 }
 
 #' Distance matrix with geometric anisotropy
@@ -31,6 +31,6 @@
 #' @return a \code{d} by \code{d} square matrix of pairwise distance
 #' @export
 distg <- function(loc, scale, rho) {
-    .Call('_mgp_distg', PACKAGE = 'mgp', loc, scale, rho)
+    .Call(`_mgp_distg`, loc, scale, rho)
 }
 
