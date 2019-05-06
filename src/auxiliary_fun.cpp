@@ -64,7 +64,7 @@ arma::mat distg(arma::mat loc, NumericVector scale, NumericVector rho){
   if(std::abs(rho[0]) > M_PI){
     stop("Invalid `rho` argument: angle must be in [-pi/2, pi/2]");
   }
-  if(scale[0] <= 1){
+  if(scale[0] < 1){
     stop("Scale parameter should be larger than 1 for identifiability");
   }
     aniso(0,0) = cos(rho)[0];
