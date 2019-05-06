@@ -5,7 +5,7 @@
 #' @param dat n by D matrix of observations
 #' @param mthresh vector of marginal thresholds under which data are censored
 #' @param thresh functional max threshold determining the risk region
-#' @param ntot total number of observations for Poisson or binomial model, if \code{dat} consists only of exceedances
+#' @param likt string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.
 #' @param model dependence model, either of \code{"br"}, \code{"xstud"} or \code{"lgm"}, in which case the model uses the independence likelihood with generalized Pareto margins
 #' @param coord matrix of coordinates, with longitude and latitude in the first two columns and additional covariates for the latent Gaussian model
 #' @param blockupsize size of block for updates of the scale parameter; \code{ncol(dat)} yields individual updates
@@ -31,16 +31,20 @@
 #' @param verbose report current values via print every \code{verbose} iterations.
 #' @param filename name of file for save.
 #' @param keepburnin logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.
-#' @param wd working directory for saving intermediate results from simulations
 #' @inheritDotParams clikmgp
+#' @export
 #' @return a list with \code{res} containing the results of the chain
-mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
+mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
                       numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, censor = TRUE, filename,
-                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L, wd = ".", ...){
+                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L, likt = c("mgp","pois","binom"), ...){
 
   slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
   slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
-  filename <- paste0(ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
+  filename <- paste0(filename, ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
+
+
+  model <- match.arg(model)
+  likt <- match.arg(likt)
 
   B <- numiter * thin + burnin
   n <- nrow(dat)
@@ -123,9 +127,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
       stop("Could not find default starting values for scale and shape parameters.")
     }
   }
-
+  if(model != "lgm"){
   #Copy dependence parameters
   dep.c <- start$dep
+  # Constant for scaling of covariance matrix
+  ckst <- 2.38 * 2.38 / length(dep.c)
   ndep <- length(dep.c)
   if(ndep == 0){
     stop("Invalid dependence parameter `dep` in `start`")
@@ -141,7 +147,10 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
   dep.lpriorfn <- start$log.prior
   stopifnot(is.function(dep.lpriorfn))
   if(is.null(dep.pcov)){stop("Missing `dep.prior` in `start`")}
-
+} else{
+ ndep <- 0
+ geoaniso <- FALSE
+}
 
   # geometric anisotropy
   if(geoaniso){
@@ -181,8 +190,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
   npar <- npar + ncol(Xm) + 2
 
 
-  # Constant for scaling of covariance matrix
-  ckst <- 2.38 * 2.38 / length(dep.c)
+
 
   # Hyperpriors for Bayesian linear model
   ols <- lm(log(scale.c) ~ -1 + Xm)
@@ -261,26 +269,22 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
       distm.c <- di
       aniso.pcov <- NULL
     }
-  }
 
-
-
-  if(model %in% c("br", "xstud")){
     par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
     if(!censor){
       loglikfn <- function(scale, shape, par, ...){
         # Initial evaluation of the log-likelihood
         likmgp(dat = dat, thresh = thresh, mthresh = mthresh, loc = rep(0, D), scale = scale,
-               shape = shape, par = par, model = model, likt = "mgp", lambdau = lambdau,
-               B1 = B1, B2 = B2, genvec1 = genvec1, genvec2 = genvec2, ncores = ncores)
+               shape = shape, par = par, model = model, likt = likt, lambdau = lambdau,
+               B1 = B1, B2 = B2, genvec1 = genvec1, genvec2 = genvec2, ncores = ncores, ntot = ntot)
       }
     } else if(censor){
       loglikfn <- function(scale, shape, par, ...){
         # Initial evaluation of the log-likelihood
         clikmgp(dat = dat, thresh = thresh, loc = rep(0, D), scale = scale,
-                shape = shape, par = par, model = model, likt = "mgp", lambdau = lambdau,
+                shape = shape, par = par, model = model, likt = likt, lambdau = lambdau,
                 B1 = B1, genvec1 = genvec1, ncores = ncores,
-                numAbovePerRow = numAbovePerRow, numAbovePerCol = numAbovePerCol, censored = censored)
+                numAbovePerRow = numAbovePerRow, numAbovePerCol = numAbovePerCol, censored = censored, ntot = ntot)
       }
 
     }
@@ -431,8 +435,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
         loglik.c <- update$ll
         df.c <- update$cur
       }
-
-
     }
     ####           UPDATE DEPENDENCE PARAMETERS             ####
     # adding prior contribution for the anisotropy parameters
@@ -588,7 +590,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br", "x
     }
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
-  #TODO check where we save the output
   save(list = list(res = res, time = time, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
               df.pcov = df.pcov, model),  file = paste0(filename, ".RData"))
 }

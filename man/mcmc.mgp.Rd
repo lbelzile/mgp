@@ -4,11 +4,11 @@
 \alias{mcmc.mgp}
 \title{Run a Markov chain Monte Carlo algorithm for multivariate generalized Pareto models}
 \usage{
-mcmc.mgp(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br",
-  "xstud", "lgm"), coord, start, numiter = 40000L, burnin = 5000L,
-  thin = 1L, verbose = 50L, censor = TRUE, filename,
-  keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L, wd = ".",
-  ...)
+mcmc.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
+  "lgm"), coord, start, numiter = 40000L, burnin = 5000L, thin = 1L,
+  verbose = 50L, censor = TRUE, filename, keepburnin = TRUE,
+  geoaniso = TRUE, blockupsize = 5L, likt = c("mgp", "pois",
+  "binom"), ...)
 }
 \arguments{
 \item{dat}{n by D matrix of observations}
@@ -16,8 +16,6 @@ mcmc.mgp(dat, mthresh, thresh, ntot, lambdau = 1, model = c("br",
 \item{mthresh}{vector of marginal thresholds under which data are censored}
 
 \item{thresh}{functional max threshold determining the risk region}
-
-\item{ntot}{total number of observations for Poisson or binomial model, if \code{dat} consists only of exceedances}
 
 \item{lambdau}{probability of exceedance of the threshold for censored observations}
 
@@ -57,7 +55,7 @@ If any of \code{scale}, \code{shape} or \code{marg.pcov} are missing, the functi
 
 \item{blockupsize}{size of block for updates of the scale parameter; \code{ncol(dat)} yields individual updates}
 
-\item{wd}{working directory for saving intermediate results from simulations}
+\item{likt}{string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.}
 
 \item{...}{Arguments passed on to \code{clikmgp}
 \describe{
