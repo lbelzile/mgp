@@ -45,7 +45,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
 
   model <- match.arg(model)
   likt <- match.arg(likt)
-
+  ellips <- list(...)
   B <- numiter * thin + burnin
   n <- nrow(dat)
   D <- ncol(dat)
@@ -77,13 +77,13 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   # Precision and generating vectors for Monte Carlo routines
   genvec1 <- ellips$genvec1
   genvec2 <- ellips$genvec2
-  B1 <- ifelse(is.null(ellips$B1), 1009L, ellips$B1)
-  B2 <- ifelse(is.null(ellips$B2), 499L, ellips$B2)
+  B1 <- ifelse(is.null(ellips$B1), 499L, ellips$B1)
+  B2 <- ifelse(is.null(ellips$B2), 307L, ellips$B2)
   if(is.null(genvec1)){
-    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)
+    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)$genVec
   }
   if(is.null(genvec2)){
-    genvec2 <- mvPot::genVecQMC(B2, ncol(dat) - 1L)
+    genvec2 <- mvPot::genVecQMC(B2, ncol(dat) - 1L)$genVec
   }
   ncores <- ifelse(is.null(ellips$ncores), 1L, ellips$ncores)
   if(censor){
@@ -104,14 +104,20 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   shape.c <- start$shape
   if(is.null(shape.c) || length(shape.c) == 1L){
     cshape <- TRUE
+  } else{
+    cshape <- FALSE
   }
 
-  if(is.null(scale.c) || is.null(shape.c)){
+  if(model %in% c("br", "xstud")){
+  marg.pcov <- start$marg.pcov
+  if(is.null(marg.pcov) || is.null(scale.c) || is.null(shape.c)){
     # Starting values for the parameters
     # Independence likelihood for marginal parameters with GP likelihood pointwise
-
     margpars <- sapply(1:D, function(j){mev::fit.gpd(xdat = as.vector(dat[,j]), threshold = mthresh[j])$est})
     mean0 <- c(margpars[1,], mean(margpars[2,]))
+    } else{
+      mean0 <- c(scale.c, shape.c)
+    }
     #These may not be feasible, but auglag can take the argument nevertheless as starting value
     opt.ind <- try(alabama::auglag(par = mean0, fn = indeplik, hin = function(par, dat, mthresh, ...){
       c(par[-length(par)], par[-length(par)] + par[length(par)]*(apply(dat, 2, max)-mthresh))},
@@ -126,8 +132,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     } else{
       stop("Could not find default starting values for scale and shape parameters.")
     }
-  }
-  if(model != "lgm"){
+
   #Copy dependence parameters
   dep.c <- start$dep
   # Constant for scaling of covariance matrix
@@ -144,18 +149,27 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   dep.pcov <- start$dep.pcov
   if(is.null(dep.pcov)){dep.pcov <- diag(ndep)}
   # log-prior function for the dependence parameters
-  dep.lpriorfn <- start$log.prior
+  dep.lpriorfn <- start$dep.lpriorfn
   stopifnot(is.function(dep.lpriorfn))
   if(is.null(dep.pcov)){stop("Missing `dep.prior` in `start`")}
-} else{
+} else{ #lgm model
+  if(is.null(scale.c) || is.null(shape.c)){
+    margpars <- sapply(1:D, function(j){mev::fit.gpd(xdat = as.vector(dat[,j]), threshold = mthresh[j])$est})
+    scale.c <- as.vector(margpars[1,])
+    shape.c <- as.vector(margpars[2,])
+    cshape <- FALSE
+  } else if(!is.null(shape.c)){
+    cshape <- ifelse(length(shape.c) > 1, FALSE, TRUE)
+  }
  ndep <- 0
  geoaniso <- FALSE
+
 }
 
   # geometric anisotropy
   if(geoaniso){
     aniso.c <- start$aniso
-    aniso.pcov <- diag(1,0.2)
+    aniso.pcov <- diag(c(0.01,0.01))
     if(is.null(aniso.c)){
       aniso.c <- c(1.2, 0)
     }
@@ -168,7 +182,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   shape.i <- D + 1
   if(model %in% c("br", "xstud")){
     dep.i <- (D + 2):(D + 1 + length(dep.c))
-  } else if (model == "lgm" && cshape){
+  } else if (model == "lgm" && !cshape){
     shape.i <- (D+1):(2*D)
   }
   if(geoaniso){
@@ -202,7 +216,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   } else{
     lan.vcov.o <- geoR::likfit(coords = loc, trend = geoR::trend.spatial(~ -1 + Xm),
                                data = log(scale.c), cov.model = "exponential",
-                               ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
+                               ini.cov.pars = rep(1,2), lik.method = "ML", messages = FALSE)
     lscale.hyp.rho.c <- lan.vcov.o$phi
     lscale.hyp.tausq.c <- lan.vcov.o$sigmasq
   }
@@ -219,7 +233,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     if(!cshape){
       shapelm.i <- (npar + 1):(npar + ncol(Xm) + 2)
       npar <- npar + ncol(Xm) + 2
-      ols <- lm(shape ~ -1 + Xm)
+      ols <- lm(shape.c ~ -1 + Xm)
       shape.hyp.mean.c <- ols$coef
       if(!requireNamespace("geoR", quietly = TRUE)){
         shape.hyp.tausq.c <- sum(resid(ols)^2)/ols$df.residual
@@ -228,7 +242,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
        } else{
         shape.vcov.o <- geoR::likfit(coords = loc, trend = geoR::trend.spatial(~ -1 + Xm),
                                      data = shape.c, cov.model = "exponential",
-                                     ini.cov.pars = rep(1,2), likfn.method = "ML", messages = FALSE)
+                                     ini.cov.pars = rep(1,2), lik.method = "ML", messages = FALSE)
         shape.hyp.rho.c <- shape.vcov.o$phi
         shape.hyp.tausq.c <- shape.vcov.o$sigmasq
        }
@@ -261,38 +275,43 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       }
     }
     if(geoaniso){
-      distm.c <- distg(loc, scale = dep.c[ndep+1], rho = dep.c[ndep+2])
+      distm.c <- distg(loc, scale = aniso.c[1], rho = aniso.c[2])
       aniso.lpriorfn <- function(aniso){
         dgamma(aniso[1] - 1, scale = 5, shape = 1, log = TRUE) #anisotropy
       }
+      aniso.pcov <- diag(c(0.01,0.01))
     } else{ #pointer to distance matrix
       distm.c <- di
       aniso.pcov <- NULL
     }
+    ntot <- ellips$ntot
 
-    par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
+    par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
     if(!censor){
       loglikfn <- function(scale, shape, par, ...){
         # Initial evaluation of the log-likelihood
-        likmgp(dat = dat, thresh = thresh, mthresh = mthresh, loc = rep(0, D), scale = scale,
+        likmgp(dat = dat, thresh = thresh, loc = rep(0, D), scale = scale,
                shape = shape, par = par, model = model, likt = likt, lambdau = lambdau,
-               B1 = B1, B2 = B2, genvec1 = genvec1, genvec2 = genvec2, ncores = ncores, ntot = ntot)
+               B1 = B1, genvec1 = genvec1, ncores = ncores, ntot = ntot)
       }
     } else if(censor){
       loglikfn <- function(scale, shape, par, ...){
         # Initial evaluation of the log-likelihood
         clikmgp(dat = dat, thresh = thresh, loc = rep(0, D), scale = scale,
                 shape = shape, par = par, model = model, likt = likt, lambdau = lambdau,
-                B1 = B1, genvec1 = genvec1, ncores = ncores,
+                B1 = B1, B2 = B2, genvec1 = genvec1, genvec2 = genvec2, ncores = ncores,
                 numAbovePerRow = numAbovePerRow, numAbovePerCol = numAbovePerCol, censored = censored, ntot = ntot)
       }
-
     }
+
     loglik.c <- loglikfn(scale = scale.c, shape = shape.c, par = par.c)
 
   } else if(model == "lgm"){
     # keep only marginal exceedances
     ldat <- apply(dat, 2, function(col){as.vector(col[col>0])})
+    dep.pcov <- NULL
+    aniso.pcov <- NULL
+    marg.pcov <- NULL
   }
 
   # Set block update size for scale parameters
@@ -308,7 +327,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
 
   # Start timer
   time.0 <- proc.time()[3] # Better would be to time every run and keep median
-
   ########################################################################
   ####################          LOOP         #############################
   ########################################################################
@@ -323,28 +341,27 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
 
     if(model %in% c("xstud", "br")){
       order <- split(sample.int(D, size = D, replace = FALSE), f = facs)
-      scale.lpriorfn <- function(scale){
+      scale.lpriorfn <- function(margpar){
+        scale <- margpar[1:ncol(lscale.hyp.precis.c)]
         dmvnorm.precis(x = log(scale), mean = as.vector(Xm %*%  lscale.hyp.mean.c),
                        precis = lscale.hyp.precis.c/lscale.hyp.tausq.c, logd = TRUE) - sum(log(scale))
       }
-      scale.loglikfn <- function(scale){ loglikfn(scael = scale, shape = shape.c, par = par.c)}
+      scale.loglikfn <- function(scale){ loglikfn(scale = scale, shape = shape.c, par = par.c)}
       for(k in 1:length(order)){
         scale.lb <- pmax(-shape.c*mmax[order[[k]]], 0)
-        update <- mh.fun(cur = scale.c, lb = scale.lb, ind = order[[k]], lik.fun = scale.loglikfn,
+        update <- mh.fun(cur = c(scale.c, shape.c), lb = scale.lb, ind = order[[k]], lik.fun = scale.loglikfn,
                             ll = loglik.c, pcov = marg.pcov, cond = FALSE, prior.fun = scale.lpriorfn)
         #Increase acceptance count, update log
         if(update$accept){
           accept[order[[k]]] <- accept[order[[k]]] + 1L
           loglik.c <- update$ll
-          scale.c <- update$cur
+          scale.c <- update$cur[1:D]
         }
       }
     } else{
       scale.c <- lscale.lgm(scale.c, shape.c, ldat, lscale.mu = lscale.mu, lscale.precis = lscale.hyp.precis.c,
                                   lscale.tausq = lscale.hyp.tausq.c, mmax = mmax, discount = 1, maxstep = 2)
     }
-
-
     ####          UPDATE HYPERPRIORS ON SCALE               ####
     # Conjugate updates from NIG model b_sigma,
     # b_xi | tausq ~ No(0, tausq*Vb_xi)
@@ -413,10 +430,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       if(attributes(lscale.hyp.rho.c)$accept){ #only update is move is accepted
         shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
       }
-      #save results
-      shape.hyp.tausq.s[b] <- shape.hyp.tausq.c
-      shape.hyp.rho.s[b] <- shape.hyp.rho.c
-      shape.hyp.mean.s[b,] <- shape.hyp.mean.c
     }
     ####           UPDATE DEGREES OF FREEDOM                ####
 
@@ -425,6 +438,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         par <- list(Sigma = par.c$Sigma, df = df)
         ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
         attributes(ll)$par <- par
+        ll
       }
       df.lpriorfn <- function(df){dgamma(df-1, shape = 1.5, scale = 5, log = TRUE)}
       update <- mh.fun(cur = df.c, lb = df.lb, ind = 1, lik.fun = df.loglikfn,
@@ -446,26 +460,27 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           par = list(Sigma = Sigma, df = par.c$df)
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
+          ll
         }
       } else{
         dep.loglikfn <- function(dep){
           par <- list(Lambda = dep.fun(distm.c, dep))
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
+          ll
         }
       }
       # Perform first updates parameter by parameter
       if(b < min(burnin, 2000L)){
         for(i in 1:ndep){
-          update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = i, lik.fun = dep.loglikfn,
-                              ll = loglik.c, pcov = ckst * dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn)
+          update <- mh.fun(cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
+                              ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn)
           if(update$accept){
             par.c <-  attributes(update$ll)$par
             loglik.c <- update$ll
             dep.c <- update$cur
             accept[dep.i[i]] <- accept[dep.i[i]] + 1L
           }
-
         }
       } else{
         update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
@@ -488,16 +503,18 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
             ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
+            ll
           }
         } else{
           aniso.loglikfn <- function(aniso){
             aniso[2] <- wrapAng(aniso[2])
             distm <- distg(loc = loc, scale = aniso[1], rho = aniso[2])
             Lambda <- dep.fun(distm, dep.c)
-            par = list(Lambda = Lambda, df = df.c)
+            par = list(Lambda = Lambda)
             ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
+            ll
           }
         }
         update <- mh.fun(cur = aniso.c, lb = aniso.lb, ind = 1:2, lik.fun = aniso.loglikfn,
@@ -516,7 +533,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     # Save current value of the log-likelihood and of all parameters at the end of the iteration
     if(thin == 1 || b %% thin == 0){
       i = as.integer(b/thin)
-      lpost[i] <- loglik.c
+      if(model %in% c("xstud", "br")){
+        lpost[i] <- loglik.c
+      } else if(model == "lgm"){
+        lpost[i] <- sum(unlist(lapply(1:D, function(j){mev::gpd.ll(par = c(scale.c[j], ifelse(cshape, shape.c[1], shape.c[j])), dat = ldat[[j]])})))
+      }
       res[i,1:D] <- scale.c
       res[i, shape.i] <- shape.c
       if(model %in% c("br", "xstud")){
@@ -550,7 +571,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
         for(j in 1:ndep){
-          ada <- adaptive(attempts = attempt[dep.i-1 + j], acceptance = accept[dep.i-1 + j], sd.p = updiag[j])
+          ada <- adaptive(attempts = attempt[dep.i[1]-1 + j], acceptance = accept[dep.i[1]-1 + j], sd.p = updiag[j])
           updiag[j] <- ada$sd/updiag[j]
           accept[dep.i-1+j] <- ada$acc
           attempt[dep.i-1+j] <- ada$att
@@ -571,12 +592,17 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           attempt[df.i] <- ada$att
         }
         if(geoaniso){
+          mb <- max(b-1000, 200)
           aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-5 * diag(2) - aniso.pcov)
         }
       }
     }
     if(b %% verbose == 0){
-      cat("Current values: ", round(c(mean(scale.c), shape.c, dep.c), 2), "\n")
+      if(model %in% c("xstud", "br")){
+        cat("Current values: ", round(c(mean(scale.c), shape.c, dep.c), 2), "\n")
+      } else{
+        cat("Current values: ", round(c(mean(scale.c), mean(shape.c)), 2), "\n")
+      }
       elapsed.time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
       remaining.time <- round((elapsed.time/b) * (B-b), 2)
       print(paste("Iteration", b, "out of", B, "completed at", Sys.time()))
@@ -584,14 +610,13 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       cat("  Remaining time:", remaining.time, "hours\n\n")
     }
     if(b %% 200 == 0){
-      save(list =
-             list(res = res, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
-                  df.pcov = df.pcov, model),  file = paste0(filename, ".RData"))
+      save(res, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
     }
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
-  save(list = list(res = res, time = time, dat = dat, Xm = Xm, lpost = lpost, dep.pcov = dep.pcov, marg.pcov = marg.pcov,
-              df.pcov = df.pcov, model),  file = paste0(filename, ".RData"))
+  save(res, time, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model,  file = paste0(filename, ".RData"))
+  invisible(return(list(res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
+                       dep.pcov = dep.pcov, marg.pcov = marg.pcov, df.pcov = df.pcov, aniso.pcov = aniso.pcov, model = model)))
 }
 
 

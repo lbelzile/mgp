@@ -72,9 +72,11 @@ if (isTRUE(d.curr > 0)) {
     prior.curr <- dgamma(lambda, a, b, log = TRUE)
     prior.new <- dgamma(lambda.new, a, b, log = TRUE)
     prop.curr <- dnorm(lambda.new, b.curr, sd = sqrt(1/d.curr), log = TRUE) -
-      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda - maxstep) - b.curr, u = lambda + maxstep, Sig = 1/d.curr, n = 1)$prob))
+      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda - maxstep) - b.curr,
+                                                   u = lambda + maxstep - b.curr, Sig = 1/d.curr, n = 1)$prob))
     prop.new <- dnorm(lambda, b.new, sd = sqrt(1/d.new), log = TRUE) -
-      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda.new - maxstep) - b.new, u = lambda.new + maxstep, Sig = 1/d.new, n = 1)$prob))
+      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda.new - maxstep) - b.new,
+                                                   u = lambda.new + maxstep - b.new, Sig = 1/d.new, n = 1)$prob))
     mh <- L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr
     if (isTRUE(log(runif(1)) < mh)) {
       lambda <- lambda.new
@@ -482,9 +484,8 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 #' \item{\code{cur}}: values of the parameters after update;
 #' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE}).
 #' }
+#' @export
 mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, ...){
-  model <- match.arg(model)
-  par <- match.arg(par)
   # overwrite missing values with default setting
   if(missing(ind)){
     lc <- length(cur)
@@ -496,7 +497,7 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
     lb <- rep(-Inf, length.out = lc)
   }
   if(missing(ub)){
-    lb <- rep(Inf, length.out = lc)
+    ub <- rep(Inf, length.out = lc)
   }
   #Sanity checks for length of arguments - only lengths
   pcov <- as.matrix(pcov) # handle scalar case
@@ -509,6 +510,7 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
   } else{
    stopifnot(length(pmu) == length(cur))
   }
+
   if(!cond){
     sig <- as.matrix(pcov[ind, ind])
   # Sample new proposal from truncated Normal centered at current value
@@ -524,8 +526,8 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
   }
   } else{# cond == TRUE
    prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
-   jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
-     dcondmvtnorm(n = 1L, ind = ind, x = prop[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
+   jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
+     dcondmvtnorm(n = 1L, ind = ind, x = prop, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
 
   }
   ll.p <- lik.fun(prop)

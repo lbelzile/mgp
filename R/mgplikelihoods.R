@@ -152,25 +152,24 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
   stopifnot(max(lambdau) <= 1, min(lambdau) > 0)
   if(model == "br"){
     Lambda <- par$Lambda
-    if(is.null(Lambda)){ stop("Invalid `par`")}
+    if(is.null(Lambda)){ stop("Invalid `par` for `br` model.")}
   } else if(model == "xstud"){
     Sigma <- par$Sigma
     df <- par$df
-    if(any(is.null(Lambda), is.null(Sigma))){ stop("Invalid `par`")}
+    if(any(is.null(df), is.null(Sigma))){ stop("Invalid `par` for `xstud` model.")}
   } else if(model == "log"){
    alpha <- par$alpha
    if(is.null(alpha)){ stop("Invalid `par`")}
    alpha <- alpha[1]
    if(alpha > 1){ alpha <- 1/alpha}
-   if(alpha < 0){ stop("Invalid `par`")}
+   if(alpha < 0){ stop("Invalid `par` for `log` model.")}
   }
   stopifnot(is.matrix(tdat), ncol(tdat) > 1)
-  if(length(thresh) < ncol(tdat)){ thresh <- rep(thresh, length.out = ncol(tdat))}
   ellips <- list(...)
-  if(likt == "pois"){
+  if(likt %in% c("pois", "binom")){
     ntot <- ellips$ntot
     if(is.null(ntot)){
-      stop("Poisson likelihood requires the total number of observations above the threshold")
+      stop("Poisson/binomial likelihood requires the total number of observations above the threshold")
     }
   }
 
@@ -181,7 +180,7 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
   B1 <- ifelse(is.null(ellips$B1), 1009L, ellips$B1)
   antithetic <- ifelse(is.null(ellips$antithetic), FALSE, ellips$antithetic)
   if(is.null(genvec1)){
-    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)
+    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)$genVec
   }
   M1 <- ifelse(is.null(ellips$M1), 1L, ellips$M1)
   ncores <- ifelse(is.null(ellips$ncores), 1L, ellips$ncores)
@@ -208,29 +207,21 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
   jac <-  - N * sum((log(A) + log(lambdau)))
   for(j in 1:D){
     if(abs(xi[j]) > 1e-5){
-      if(model == "br"){
-        tdat[,j] <- log(pmax(0, 1 + xi[j] * (dat[,j] - B[j])/A[j]))
-        jac <- jac + (1/xi[j] - 1) * sum(tdat[,j])
-        tdat[,j] <- (1/xi[j])*tdat[,j] - log(lambdau[j])
-      }  else {
         tdat[,j] <- pmax(0, (1 + xi[j] * (dat[,j] - B[j])/A[j]))
         jac <- jac + (1/xi[j] - 1) * sum(log(tdat[,j]))
         tdat[,j] <- tdat[,j]^(1/xi[j])/lambdau[j]
-      }
       # Map thresholds
       tu[j] <-  (1 + xi[j] * (thresh - B[j])/A[j])^(1/xi[j])/lambdau[j]
     } else { #xi is zero
       tdat[,j] <-  (dat[,j] - B[j])/A[j] # this is a transformation onto log scale
       # Jacobian of marginal transformation - for both models
       jac <- jac + sum(tdat[,j])
-      tdat[,j] <- tdat[,j]  - log(lambdau[j])
-      if(model != "br"){
-        tdat[,j] <- exp(tdat[,j])
-      }
+      tdat[,j] <- exp(tdat[,j]  - log(lambdau[j]))
       # Map thresholds
-       tu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
+      tu[j] <-  exp((thresh - B[j]) / A[j])/lambdau[j]
+      }
     }
-  }
+
   if(model == "br"){
     intens <- intensBR(tdat = tdat, Lambda = Lambda)
     exponentMeasure <- sum(.weightsBR(z = tu, Lambda = Lambda, prime = B1, method = "mvPot", genvec = genvec1, nrep = 1)/tu)
@@ -304,17 +295,17 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
   stopifnot(max(lambdau) <= 1, min(lambdau) > 0)
   if(model == "br"){
     Lambda <- par$Lambda
-    if(is.null(Lambda)){ stop("Invalid `par`")}
+    if(is.null(Lambda)){ stop("Invalid `par` for `br` model.")}
   } else if(model == "xstud"){
     Sigma <- par$Sigma
     df <- par$df
-    if(any(is.null(Lambda), is.null(Sigma))){ stop("Invalid `par`")}
+    if(any(is.null(df), is.null(Sigma))){ stop("Invalid `par` for `xstud` model.")}
   } else if(model == "log"){
     alpha <- par$alpha
     if(is.null(alpha)){ stop("Invalid `par`")}
     alpha <- alpha[1]
     if(alpha > 1){ alpha <- 1/alpha}
-    if(alpha < 0){ stop("Invalid `par`")}
+    if(alpha < 0){ stop("Invalid `par` for `log` model.")}
   }
   stopifnot(is.matrix(tdat), ncol(tdat) > 1)
   if(length(mthresh) < ncol(tdat)){ mthresh <- rep(mthresh, length.out = ncol(tdat))}
@@ -336,10 +327,10 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
   B2 <- ifelse(is.null(ellips$B2), 499L, ellips$B2)
   antithetic <- ifelse(is.null(ellips$antithetic), FALSE, ellips$antithetic)
   if(is.null(genvec1)){
-    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)
+    genvec1 <- mvPot::genVecQMC(B1, ncol(dat) - 1L)$genVec
   }
   if(is.null(genvec2)){
-    genvec2 <- mvPot::genVecQMC(B2, ncol(dat) - 1L)
+    genvec2 <- mvPot::genVecQMC(B2, ncol(dat) - 1L)$genVec
   }
   M1 <- ifelse(is.null(ellips$M1), 1L, ellips$M1)
   M2 <- ifelse(is.null(ellips$M2), 1L, ellips$M2)
@@ -525,6 +516,7 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
                 binom =  - (ntot-N) * log(1-exponentMeasure) + lchoose(ntot, N)
                 )
   attributes(res) <- list("expme" = exponentMeasure)
+  return(res)
 
 }
 
@@ -539,9 +531,7 @@ clikmgp <- function(dat, thresh, mthresh = thresh, loc, scale, shape, par, model
 #' @param method string indicating the package from which to extract the numerical integration routine
 #' @return numeric giving the measure of the complement of \eqn{[0,z]}.
 #' @export
-#' @importFrom TruncatedNormal mvNqmc
-#' @importFrom TruncatedNormal mvTqmc
-#' @importFrom stats rWishart
+#' @importFrom TruncatedNormal mvNqmc mvTqmc
 #' @examples
 #' \dontrun{
 #' #Extremal Student
