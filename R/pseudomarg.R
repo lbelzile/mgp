@@ -360,7 +360,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       }
     } else{
       scale.c <- lscale.lgm(scale.c, shape.c, ldat, lscale.mu = lscale.mu, lscale.precis = lscale.hyp.precis.c,
-                                  lscale.tausq = lscale.hyp.tausq.c, mmax = mmax, discount = 1, maxstep = 2)
+                                  lscale.tausq = lscale.hyp.tausq.c, mmax = mmax, discount = 1, maxstep = Inf)
     }
     ####          UPDATE HYPERPRIORS ON SCALE               ####
     # Conjugate updates from NIG model b_sigma,
@@ -392,7 +392,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     ####          UPDATE MARGINAL SHAPE PARAMETER           ####
 
     if(model %in% c("xstud", "br")){
-      shape.lb <- max(-0.49,-min(scale.c/mmax))
+      shape.lb <- max(-0.49, -min(scale.c/mmax))
       shape.lpriorfn <- function(shape){
         dnorm(x = shape, mean = 0, sd = 0.2, log = TRUE)
       }
@@ -548,10 +548,10 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         if(model == "xstud"){
           res[i, df.i] <- df.c
         }
-        res[i, lscalelm.i] <- c(lscale.hyp.mean.c, lscale.hyp.tausq.c, lscale.hyp.rho.c)
-        if(model == "lgm" && !cshape){
-          res[i, shapelm.i] <- c(shape.hyp.mean.c, shape.hyp.tausq.c, shape.hyp.rho.c)
-        }
+      }
+      res[i, lscalelm.i] <- c(lscale.hyp.mean.c, lscale.hyp.tausq.c, lscale.hyp.rho.c)
+      if(model == "lgm" && !cshape){
+        res[i, shapelm.i] <- c(shape.hyp.mean.c, shape.hyp.tausq.c, shape.hyp.rho.c)
       }
     }
 
@@ -609,7 +609,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       cat("  Elapsed time:", elapsed.time, "hours\n")
       cat("  Remaining time:", remaining.time, "hours\n\n")
     }
-    if(b %% 200 == 0){
+    if(b %% 500 == 0){
       save(res, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
     }
   }
