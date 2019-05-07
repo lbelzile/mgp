@@ -360,12 +360,14 @@ lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.taus
 #' @param shape.mu mean of the Gaussian process for the shape parameters
 #' @param shape.precis precision matrix of the Gaussian process corresponding to the inverse of the correlation matrix
 #' @param shape.tausq variance of the Gaussian process for the shape parameters
+#' @param lbound lower bound if parameter is truncated below
+#' @param ubound upper bound if parameter is truncated above
 #' @param mmax vector of maximum of each series in \code{ldat}
 #' @param discount numeric giving the discount factor for the Newton  Default to 1.
 #' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
 #' @return a vector of scale parameters
 #' @export
-shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, discount = 1, maxstep = 0.1){
+shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, lbound = -0.5, ubound = 0.5, discount = 1, maxstep = 0.1){
   D <- length(scale)
   stopifnot(length(ldat) == length(scale))
   # likelihood function
@@ -389,13 +391,13 @@ shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, 
 for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
   if(cshape){
     condmean <- 0; condprec <- 25
-    lbxi <- pmax(-0.49, -min(scale/mmax), shape - maxstep)
-    ubxi <- shape + maxstep
+    lbxi <- pmax(lbound, -min(scale/mmax), shape - maxstep)
+    ubxi <- pmin(ubound, shape + maxstep)
   } else{
     condmean <- c(shape.mu[k] - solve(shape.precis[k,k, drop = FALSE]) %*% shape.precis[k,-k, drop = FALSE] %*% (shape[-k] - shape.mu[-k]))
     condprec <- shape.precis[k,k, drop = FALSE]/shape.tausq
-    lbxi <- pmax(-0.49,-scale[k]/mmax[k])
-    ubxi <- pmax(shape[k] + maxstep)
+    lbxi <- pmax(lbound,-scale[k]/mmax[k])
+    ubxi <- pmin(ubound,pmax(shape[k] + maxstep))
   }
   #Copy shape, perform Newton step from current value
   shape.p <- shape

@@ -5,7 +5,8 @@
 \title{Update for latent Gaussian model for the scale parameter of a generalized Pareto}
 \usage{
 shape.lgm(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL,
-  shape.tausq = NULL, mmax, discount = 1, maxstep = 0.1)
+  shape.tausq = NULL, mmax, lbound = -0.5, ubound = 0.5,
+  discount = 1, maxstep = 0.1)
 }
 \arguments{
 \item{scale}{vector of scale parameters for the generalized Pareto distribution}
@@ -21,6 +22,10 @@ shape.lgm(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL,
 \item{shape.tausq}{variance of the Gaussian process for the shape parameters}
 
 \item{mmax}{vector of maximum of each series in \code{ldat}}
+
+\item{lbound}{lower bound if parameter is truncated to an interval}
+
+\item{ubound}{lower bound if parameter is truncated to an interval}
 
 \item{discount}{numeric giving the discount factor for the Newton  Default to 1.}
 
