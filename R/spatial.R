@@ -67,6 +67,7 @@ schlather.vario <- function(h, alpha, beta, scale = 1){
   } else{
     log(1+(h/scale)^alpha)/log(2)
   }
+  #If alpha is too close to zero, may return matrix with NaN
 }
 
 

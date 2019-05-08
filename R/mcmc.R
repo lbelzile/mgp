@@ -367,7 +367,10 @@ lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.taus
 #' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
 #' @return a vector of scale parameters
 #' @export
-shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL, mmax, lbound = -0.5, ubound = 0.5, discount = 1, maxstep = 0.1){
+shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL,
+                      mmax, lbound = -0.5, ubound = 0.5, discount = 1, maxstep = 0.1){
+  stopifnot(ubound[1] > lbound[1], length(lbound) == 1, length(ubound) == 1)
+
   D <- length(scale)
   stopifnot(length(ldat) == length(scale))
   # likelihood function
@@ -391,13 +394,13 @@ shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, 
 for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
   if(cshape){
     condmean <- 0; condprec <- 25
-    lbxi <- pmax(lbound, -min(scale/mmax), shape - maxstep)
-    ubxi <- pmin(ubound, shape + maxstep)
+    lbxi <- max(lbound, -min(scale/mmax), shape - maxstep)
+    ubxi <- max(lbxi + 0.25, min(ubound, shape + maxstep))
   } else{
     condmean <- c(shape.mu[k] - solve(shape.precis[k,k, drop = FALSE]) %*% shape.precis[k,-k, drop = FALSE] %*% (shape[-k] - shape.mu[-k]))
     condprec <- shape.precis[k,k, drop = FALSE]/shape.tausq
-    lbxi <- pmax(lbound,-scale[k]/mmax[k])
-    ubxi <- pmin(ubound,pmax(shape[k] + maxstep))
+    lbxi <- max(lbound, -scale[k]/mmax[k], shape[k] - maxstep)
+    ubxi <- max(lbxi + 0.25, min(ubound, shape[k] + maxstep))
   }
   #Copy shape, perform Newton step from current value
   shape.p <- shape

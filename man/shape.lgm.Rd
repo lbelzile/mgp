@@ -23,9 +23,9 @@ shape.lgm(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL,
 
 \item{mmax}{vector of maximum of each series in \code{ldat}}
 
-\item{lbound}{lower bound if parameter is truncated to an interval}
+\item{lbound}{lower bound if parameter is truncated below}
 
-\item{ubound}{lower bound if parameter is truncated to an interval}
+\item{ubound}{upper bound if parameter is truncated above}
 
 \item{discount}{numeric giving the discount factor for the Newton  Default to 1.}
 
