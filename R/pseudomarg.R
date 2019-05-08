@@ -1,6 +1,6 @@
 #' Run a Markov chain Monte Carlo algorithm for multivariate generalized Pareto models
 #'
-#' The algorithm estimates dependence parameters for either with a latent Gaussian model on the log-scale
+#' The algorithm estimates dependence parameters and includes a latent log-Gaussian model for the scale
 #'
 #' @param dat n by D matrix of observations
 #' @param mthresh vector of marginal thresholds under which data are censored
@@ -31,22 +31,32 @@
 #' @param verbose report current values via print every \code{verbose} iterations.
 #' @param filename name of file for save.
 #' @param keepburnin logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.
+#' @param saveinterm integer indicating when to save results. Default to \code{500L}.
 #' @inheritDotParams clikmgp
 #' @export
+#' @keywords internal
 #' @return a list with \code{res} containing the results of the chain
 mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
-                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, censor = TRUE, filename,
-                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = 5L, likt = c("mgp","pois","binom"), ...){
+                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename,
+                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), likt = c("mgp","pois","binom"),
+                     saveinterm = 500L,...){
 
   slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
   slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
   filename <- paste0(filename, ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
-
-
   model <- match.arg(model)
   likt <- match.arg(likt)
   ellips <- list(...)
   B <- numiter * thin + burnin
+  if(isTRUE(is.finite(saveinterm))){
+    if(saveinterm < 0){
+      saveinterm <-  B + 1L
+    } else{
+      saveinterm <- as.integer(saveinterm)
+    }
+  } else{
+    saveinterm <- B + 1L
+  }
   n <- nrow(dat)
   D <- ncol(dat)
   mthresh <- rep(mthresh, length.out = D)
@@ -277,7 +287,8 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     if(geoaniso){
       distm.c <- distg(loc, scale = aniso.c[1], rho = aniso.c[2])
       aniso.lpriorfn <- function(aniso){
-        dgamma(aniso[1] - 1, scale = 5, shape = 1, log = TRUE) #anisotropy
+        dnorm(aniso[1] - 1, sd = 1.5, mean = 0, log = TRUE)
+        #dgamma(aniso[1] - 1, scale = 5, shape = 1, log = TRUE) #anisotropy
       }
       aniso.pcov <- diag(c(0.01,0.01))
     } else{ #pointer to distance matrix
@@ -303,7 +314,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
                 numAbovePerRow = numAbovePerRow, numAbovePerCol = numAbovePerCol, censored = censored, ntot = ntot)
       }
     }
-
     loglik.c <- loglikfn(scale = scale.c, shape = shape.c, par = par.c)
 
   } else if(model == "lgm"){
@@ -465,7 +475,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       } else{
         dep.loglikfn <- function(dep){
           par <- list(Lambda = dep.fun(distm.c, dep))
+          if(isTRUE(any(is.nan(par$Lambda)))){ #If alpha too close to zero, invalid matrix
+           ll = -Inf
+          } else{
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+          }
           attributes(ll)$par <- par
           ll
         }
@@ -511,7 +525,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
             distm <- distg(loc = loc, scale = aniso[1], rho = aniso[2])
             Lambda <- dep.fun(distm, dep.c)
             par = list(Lambda = Lambda)
-            ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+            if(isTRUE(any(is.nan(par$Lambda)))){ #If alpha too close to zero, invalid matrix
+              ll = -Inf
+            } else{
+              ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+            }
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
             ll
@@ -609,7 +627,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       cat("  Elapsed time:", elapsed.time, "hours\n")
       cat("  Remaining time:", remaining.time, "hours\n\n")
     }
-    if(b %% 500 == 0){
+    if(b %% saveinterm == 0){
       save(res, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
     }
   }
