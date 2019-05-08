@@ -4,10 +4,9 @@
 #' Data that fall below a marginal threshold are censored and imputed according to the conditional distribution.
 #' For \code{riskr == "sum"}, this require an accept-reject scheme to ensure the points with the simulated components
 #' still lies in the risk region defined by the marginal and dependence parameters.
-#'
 #' @inheritParams clikmgp
 #' @param riskr string giving the risk region, either \code{max} or \code{sum}
-#' @param map logical; should imputed data be returned on the unit Pareto scale? Default to \code{FALSE}
+#' @param map logical; should data be returned on the unit Pareto scale? Default to \code{FALSE}
 #' @return a matrix of observations with imputed values in place of censored components.
 #' @export
 impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau = 1, riskr = c("max", "sum"), par, map = FALSE, ...){
@@ -100,26 +99,30 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
         inriskregion <- FALSE
         while(!inriskregion){
           if(length(ab) == 1){
-            if(length(be) > 1){
-              prop <- as.matrix(TruncatedNormal::mvrandn(n = nsimu,
+            if(length(be) > 1 || risk == "max"){
+              prop <- t(as.matrix(TruncatedNormal::mvrandn(n = nsimu,
                                                          l = rep(-Inf, length(be2)),
-                                                         u = thD, mu = muD, Sig = SigmaD))
+                                                         u = thD, mu = muD, Sig = SigmaD)))
             } else { #length be == 1, so D=2 and we can exactly get lower bound
-              prop <- as.matrix(TruncatedNormal::mvrandn(n = 1, u = thD, mu = muD,
+              prop <- t(as.matrix(TruncatedNormal::mvrandn(n = 1, u = thD, mu = muD,
                                                          Sig = SigmaD, l =  - log(tdat[i, ab[1]]) +
-                        log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be]) -loc[be]))^(1/shape[be])/lambdau[be])))
+                        log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be]) -loc[be]))^(1/shape[be])/lambdau[be]))))
 
             }
           } else {# length(ab) > 1
-            if(length(be) == 1){
-              prop <- t(as.matrix(rcondmvtnorm(n = 1, ind = be2, model = "norm",
-                         ubound = thD, mu = muD, sigma = SigmaD, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
-                         lbound =  - log(tdat[i, ab[1]]) +
-                         log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be]))))
-            } else{
+            if(length(be) > 1 || risk == "max"){
               prop <- t(as.matrix(rcondmvtnorm(n = switch(riskr, max = 1, sum = 5*length(be2)),
                                                ind = be2, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
                                                ubound = thD, mu = muD, sigma = SigmaD, model = "norm")))
+            } else {
+              lbbe <- - log(tdat[i, ab[1]]) +
+                log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be])
+              if(is.nan(lb)){
+                lbbe <- -Inf
+              }
+              prop <- t(as.matrix(rcondmvtnorm(n = 1, ind = be2, model = "norm",
+                         ubound = thD, mu = muD, sigma = SigmaD, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
+                         lbound = lbbe)))
             }
           }
           for(k in 1:nrow(prop)){
@@ -129,7 +132,6 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
             } else if(riskr == "sum"){
             inriskregion <- isTRUE(sum(scale*(tdat[i,]^shape-1)/shape + loc) > thresh)
             }
-            if(inriskregion){break()}
           }
         }
       }
@@ -137,7 +139,7 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
   if(!map){
     #Back transform the observations
     for(j in 1:D){
-      dat[censored[,j],j] <-  (tdat[censored[,j],j]^shape[j]-1)/shape[j]*scale[j] + loc[j]
+      dat[censored[,j],j] <-  (tdat[censored[,j],j]^shape[j]-1)/shape[j]*scale[j] + loc[j] #map from Pareto to GPD
     }
     return(dat)
   } else{

@@ -261,7 +261,7 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
 #' Censored likelihood for the logistic distribution and the Brown--Resnick and extremal Student processes.
 #'
 #' @inheritParams likmgp
-#' @param mthresh vector of individuals mthresholds under which observations are censored
+#' @param mthresh vector of individuals thresholds under which observations are censored
 #' @param ... additional arguments (see Details)
 #' @note The location and scale parameters are not identifiable unless one of them is fixed.
 #' @details
