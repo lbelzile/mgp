@@ -5,7 +5,7 @@
 \title{Update function based on Metropolis-Hasting algorithm}
 \usage{
 mh.fun(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE,
-  ...)
+  transform = FALSE, ...)
 }
 \arguments{
 \item{cur}{current value of the vector of parameters of which one component is to be updated.}
@@ -16,7 +16,8 @@ mh.fun(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE,
 
 \item{prior.fun}{log prior function, a function of the parameter to update.}
 
-\item{lik.fun}{log-likelihood function, a function of the parameter to  For dependence parameters, updates of the dependence parameters can be passed as attributes.}
+\item{lik.fun}{log-likelihood function, a function of the parameters to update. The user who wants to keep
+results of intermediate can pass them via attributes.}
 
 \item{ll}{value of the log-likelihood at \code{cur}.}
 
@@ -27,6 +28,9 @@ mh.fun(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE,
 \item{pcov}{covariance matrix of the proposal for \code{cur}.}
 
 \item{cond}{logical; should updates be made conditional on other values in \code{cur}. Default to \code{TRUE}.}
+
+\item{transform}{logical; should individual updates for each parameter be performed on the unconstrained space? If \code{TRUE},
+argument \code{cond} is ignored.}
 
 \item{...}{additional arguments passed to the function, currently ignored.}
 }

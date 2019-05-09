@@ -88,6 +88,40 @@ return(lambda)
 }
 
 
+#' Transform variables to unconstrained space
+#'
+#' This function uses the transformations detailed in the STAN reference manual (Section 56.4 in version 2.9).
+#'
+#' @inheritParams rprop.rwmh
+#' @return unconstrained transformed vector
+#' @export
+#' @keywords internal
+transfo.pars <- function(cur, lbound, ubound){
+  if(is.vector(cur)){
+    D <- length(cur)
+    cur <- matrix(cur, nrow = 1)
+  } else if(is.matrix(cur)){
+    D <- ncol(cur)
+  }
+
+  tr.cur <- cur
+  for(j in 1:D){
+    if(lbound[j] == -Inf && ubound[j] == Inf){
+      tr.cur[,j] <- cur[,j]
+    } else if(lbound[j] > -Inf && ubound[j] == Inf){
+      tr.cur[,j] <- log(cur[,j] - lbound[j])
+    } else if(lbound[j] == -Inf && ubound[j] < Inf){
+      tr.cur[,j] <- log(ubound[j] - cur[,j])
+    } else{
+      tr.cur[,j] <-  logit((cur[,j] - lbound[j]) / (ubound[j] - lbound[j]))
+    }
+  }
+  if(nrow(cur) == 1){
+    as.vector(tr.cur)
+  } else{
+   tr.cur
+  }
+}
 
 #' Proposals for random walk Metropolis-Hastings
 #'
@@ -104,7 +138,7 @@ return(lambda)
 #' @return a list with components \code{prop}, \code{trprop} and \code{logjac}
 #' @export
 #' @keywords internal
-propRWMH <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(cov)), ubound = rep(Inf, ncol(cov))){
+rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(cov)), ubound = rep(Inf, ncol(cov))){
   if(is.null(trcur) && is.null(cur)){
     stop("Either `trcur` or `cur` must be provided")
   } else if(!is.null(trcur)){
@@ -113,19 +147,8 @@ propRWMH <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(cov)
     tr.cur <-  trcur
   } else{
     d <- length(cur)
-    tr.cur <- rep(0, d);
     stopifnot(d == dim(cov), length(lbound) == d, length(ubound) == d)
-    for(j in 1:d){
-      if(lbound[j] == -Inf && ubound[j] == Inf){
-        tr.cur[j] <- cur[j]
-      } else if(lbound[j] > -Inf && ubound[j] == Inf){
-        tr.cur[j] <- log(cur[j] - lbound[j])
-      } else if(lbound[j] == -Inf && ubound[j] < Inf){
-        tr.cur[j] <- log(ubound[j] - cur[j])
-      } else{
-        tr.cur[j] <-  logit((cur[j] - lbound[j]) / (ubound[j] - lbound[j]))
-      }
-    }
+    tr.cur <- transfo.pars(cur, lbound = lbound, ubound = ubound)
   }
   prop <- rep(0, d)
   logratio <- rep(0, d)
@@ -477,11 +500,14 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 #' @param ub upper bounds for the parameters of interest. Default to \code{Inf} if argument is missing.
 #' @param ind indices of \code{cur} to update.
 #' @param prior.fun log prior function, a function of the parameter to update.
-#' @param lik.fun log-likelihood function, a function of the parameter to  For dependence parameters, updates of the dependence parameters can be passed as attributes.
+#' @param lik.fun log-likelihood function, a function of the parameters to update. The user who wants to keep
+#' results of intermediate can pass them via attributes.
 #' @param ll value of the log-likelihood at \code{cur}.
 #' @param pmu proposal mean; if missing, default to random walk.
 #' @param pcov covariance matrix of the proposal for \code{cur}.
 #' @param cond logical; should updates be made conditional on other values in \code{cur}. Default to \code{TRUE}.
+#' @param transform logical; should individual updates for each parameter be performed on the unconstrained space? If \code{TRUE},
+#' argument \code{cond} is ignored.
 #' @param ... additional arguments passed to the function, currently ignored.
 #' @return a list with components
 #' \itemize{
@@ -490,7 +516,7 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 #' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE}).
 #' }
 #' @export
-mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, ...){
+mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, transform = FALSE, ...){
   # overwrite missing values with default setting
   if(missing(ind)){
     lc <- length(cur)
@@ -504,36 +530,46 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
   if(missing(ub)){
     ub <- rep(Inf, length.out = lc)
   }
+  #Transform to different scale if transfo is TRUE, see STAN manual for transformations
+  #This help with skewed variables
   #Sanity checks for length of arguments - only lengths
   pcov <- as.matrix(pcov) # handle scalar case
   stopifnot(length(lb) == lc, lc == length(ub), ncol(pcov) == nrow(pcov), ncol(pcov) == length(cur))
-  # Copy value
-  prop <- cur
-  if(missing(pmu)){
-   pmu <- cur
-   RW <- TRUE
+
+  if(transform){
+      propRW <- rprop.rwmh(cur = cur[ind], cov = as.matrix(pcov[ind, ind]), lbound = lb, ubound = ub)
+      prop <- cur
+      prop[ind] <- propRW$prop
+      jac <- propRW$logratio
   } else{
-   stopifnot(length(pmu) == length(cur))
-  }
+    # Copy value
+    prop <- cur
+    if(missing(pmu)){
+     pmu <- cur
+     RW <- TRUE
+    } else{
+     stopifnot(length(pmu) == length(cur))
+    }
 
-  if(!cond){
-    sig <- as.matrix(pcov[ind, ind])
-  # Sample new proposal from truncated Normal centered at current value
-  prop[ind] <- TruncatedNormal::mvrandn(l = lb, mu = pmu[ind], u = ub, Sig = sig, n = 1)
-  if(RW){
-    # mean is at previous iteration, so density term drops out because of symmetry,
-    #but not normalizing constant of truncated dist (since means differ)
-    jac <- suppressWarnings(-log(TruncatedNormal::mvNcdf(l = lb - prop[ind], u = ub - prop[ind], Sig = sig, n = 1000)$prob) +
-                              log(TruncatedNormal::mvNcdf(l = lb - cur[ind], u = ub - cur[ind], Sig = sig, n = 1000)$prob))
-  } else{ #fixed mean, so normalizing constants for truncated components cancels out of the ratio of transition kernel densities
-    jac <- mgp::dmvnorm(x = cur[ind], mean = pmu[ind], sigma = sig, logd = TRUE) -
-      mgp::dmvnorm(x = prop[ind], mean = pmu[ind], sigma = sig, logd = TRUE)
-  }
-  } else{# cond == TRUE
-   prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
-   jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
-     dcondmvtnorm(n = 1L, ind = ind, x = prop, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
+    if(!cond){
+      sig <- as.matrix(pcov[ind, ind])
+    # Sample new proposal from truncated Normal centered at current value
+    prop[ind] <- TruncatedNormal::mvrandn(l = lb, mu = pmu[ind], u = ub, Sig = sig, n = 1)
+    if(RW){
+      # mean is at previous iteration, so density term drops out because of symmetry,
+      #but not normalizing constant of truncated dist (since means differ)
+      jac <- suppressWarnings(-log(TruncatedNormal::mvNcdf(l = lb - prop[ind], u = ub - prop[ind], Sig = sig, n = 1000)$prob) +
+                                log(TruncatedNormal::mvNcdf(l = lb - cur[ind], u = ub - cur[ind], Sig = sig, n = 1000)$prob))
+    } else{ #fixed mean, so normalizing constants for truncated components cancels out of the ratio of transition kernel densities
+      jac <- mgp::dmvnorm(x = cur[ind], mean = pmu[ind], sigma = sig, logd = TRUE) -
+        mgp::dmvnorm(x = prop[ind], mean = pmu[ind], sigma = sig, logd = TRUE)
+    }
+    } else{# cond == TRUE
+     prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
+     jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
+       dcondmvtnorm(n = 1L, ind = ind, x = prop, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
 
+    }
   }
   ll.p <- lik.fun(prop)
   if(missing(ll)){

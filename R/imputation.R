@@ -99,7 +99,7 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
         inriskregion <- FALSE
         while(!inriskregion){
           if(length(ab) == 1){
-            if(length(be) > 1 || risk == "max"){
+            if(length(be) > 1 || riskr == "max"){
               prop <- t(as.matrix(TruncatedNormal::mvrandn(n = nsimu,
                                                          l = rep(-Inf, length(be2)),
                                                          u = thD, mu = muD, Sig = SigmaD)))
@@ -110,14 +110,14 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
 
             }
           } else {# length(ab) > 1
-            if(length(be) > 1 || risk == "max"){
+            if(length(be) > 1 || riskr == "max"){
               prop <- t(as.matrix(rcondmvtnorm(n = switch(riskr, max = 1, sum = 5*length(be2)),
                                                ind = be2, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
                                                ubound = thD, mu = muD, sigma = SigmaD, model = "norm")))
             } else {
               lbbe <- - log(tdat[i, ab[1]]) +
                 log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be])
-              if(is.nan(lb)){
+              if(is.nan(lbbe)){
                 lbbe <- -Inf
               }
               prop <- t(as.matrix(rcondmvtnorm(n = 1, ind = be2, model = "norm",

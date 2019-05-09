@@ -29,6 +29,8 @@
 #' @param thin thining parameter; only every \code{thin} iteration is saved
 #' @param burnin number of initial parameters for adaptation and discarded values.
 #' @param verbose report current values via print every \code{verbose} iterations.
+#' @param transform logical; should parameters be sampled on an unconstrained space if they are bounded. Default is \code{FALSE}, in which case
+#' the Metropolis-Hastings proposals are performed by sampling from multivariate truncated Gaussian
 #' @param filename name of file for save.
 #' @param keepburnin logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.
 #' @param saveinterm integer indicating when to save results. Default to \code{500L}.
@@ -37,17 +39,18 @@
 #' @keywords internal
 #' @return a list with \code{res} containing the results of the chain
 mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
-                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename,
-                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), likt = c("mgp","pois","binom"),
+                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename, censor = TRUE,
+                      keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE, likt = c("mgp","pois","binom"),
                      saveinterm = 500L,...){
 
   slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
   slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
-  filename <- paste0(filename, ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
+  filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
   model <- match.arg(model)
   likt <- match.arg(likt)
   ellips <- list(...)
   B <- numiter * thin + burnin
+
   if(isTRUE(is.finite(saveinterm))){
     if(saveinterm < 0){
       saveinterm <-  B + 1L
@@ -207,13 +210,27 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     df.lb <- 1+1e-5
     npar <- npar + 1L
     df.i <- npar
+    # Port to dep. to perform updates together with dep
+    dep.c <- c(dep.c, df.c)
+    dep.npcov <- matrix(0, ndep + 1, ndep + 1)
+    dep.npcov[1:ndep, 1:ndep] <- dep.pcov
+    dep.npcov[ndep + 1, ndep + 1] <- df.pcov
+    dep.pcov <- dep.npcov
+    dep.lb <- c(dep.lb, df.lb)
+    dep.ub <- c(dep.ub, Inf)
+    depdf.i <- c(dep.i, df.i)
   } else{
     df.pcov <- NULL
+    df.i <- NULL
   }
   lscalelm.i <- (npar+1):(npar + ncol(Xm) + 2)
   npar <- npar + ncol(Xm) + 2
 
-
+  if(transform){
+    transform.fn <- function(x){transfo.pars(x, lbound = dep.lb, ubound = dep.ub)}
+  } else{
+    transform.fn <- identity
+  }
 
 
   # Hyperpriors for Bayesian linear model
@@ -437,37 +454,38 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
 
       shape.hyp.rho.c <- updt.range(tau = shape.c - c(Xm %*%shape.hyp.mean.c), alpha = 1/shape.hyp.tausq.c,
                                       lambda = shape.hyp.rho.c, di = di, a = 2, b = 2, discount = 0.5, lb = 1e-2, maxstep = 1)
-      if(attributes(lscale.hyp.rho.c)$accept){ #only update is move is accepted
+      if(attributes(shape.hyp.rho.c)$accept){ #only update is move is accepted
         shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
       }
     }
     ####           UPDATE DEGREES OF FREEDOM                ####
 
-    if(model == "xstud"){
-      df.loglikfn <- function(df){
-        par <- list(Sigma = par.c$Sigma, df = df)
-        ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
-        attributes(ll)$par <- par
-        ll
-      }
-      df.lpriorfn <- function(df){dgamma(df-1, shape = 1.5, scale = 5, log = TRUE)}
-      update <- mh.fun(cur = df.c, lb = df.lb, ind = 1, lik.fun = df.loglikfn,
-                          ll = loglik.c, pcov = df.pcov, cond = FALSE, prior.fun = df.lpriorfn)
-      if(update$accept){
-        accept[df.i] <- accept[df.i] + 1L
-        par.c <-  attributes(update$ll)$par
-        loglik.c <- update$ll
-        df.c <- update$cur
-      }
-    }
+    # if(model == "xstud"){
+    #   df.loglikfn <- function(df){
+    #     par <- list(Sigma = par.c$Sigma, df = df)
+    #     ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+    #     attributes(ll)$par <- par
+    #     ll
+    #   }
+    #   df.lpriorfn <- function(df){dgamma(df-1, shape = 1.5, scale = 5, log = TRUE)}
+    #   update <- mh.fun(cur = df.c, lb = df.lb, ind = 1, lik.fun = df.loglikfn, transfo = TRUE,
+    #                       ll = loglik.c, pcov = df.pcov, cond = FALSE, prior.fun = df.lpriorfn)
+    #   if(update$accept){
+    #     accept[df.i] <- accept[df.i] + 1L
+    #     par.c <-  attributes(update$ll)$par
+    #     loglik.c <- update$ll
+    #     df.c <- update$cur
+    #   }
+    # }
     ####           UPDATE DEPENDENCE PARAMETERS             ####
     # adding prior contribution for the anisotropy parameters
 
     if(model %in% c("br", "xstud")){
       if(model == "xstud"){
         dep.loglikfn <- function(dep){
-          Sigma <- dep.fun(distm.c, dep)
-          par = list(Sigma = Sigma, df = par.c$df)
+          Sigma <- dep.fun(distm.c, dep[1:ndep])
+          #par = list(Sigma = Sigma, df = par.c$df)
+          par = list(Sigma = Sigma, df = dep[length(dep)])
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
           ll
@@ -488,25 +506,37 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       if(b < min(burnin, 2000L)){
         for(i in 1:ndep){
           update <- mh.fun(cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
-                              ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn)
+                              ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn, transform = transform)
           if(update$accept){
             par.c <-  attributes(update$ll)$par
             loglik.c <- update$ll
-            dep.c <- update$cur
+            if(model == "xstud"){
+              dep.c <- update$cur[1:ndep]
+              df.c <- update$cur[ndep+1]
+            } else{
+              dep.c <- update$cur
+            }
             accept[dep.i[i]] <- accept[dep.i[i]] + 1L
           }
         }
       } else{
         update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
-                            ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, prior.fun = dep.lpriorfn)
+                            ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn)
         if(update$accept){
           accept[dep.i] <- accept[dep.i] + 1L
           par.c <-  attributes(update$ll)$par
           loglik.c <- update$ll
-          dep.c <- update$cur
+          if(model == "xstud"){
+            dep.c <- update$cur[1:ndep]
+            df.c <- update$cur[ndep+1]
+            accept[df.i] <- accept[df.i] + 1L
+          } else{
+           dep.c <- update$cur
+          }
         }
 
       }
+
       if(geoaniso){
         if(model == "xstud"){
           aniso.loglikfn <- function(aniso){
@@ -588,8 +618,8 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         marg.pcov <- diag(updiag) %*% marg.pcov %*% diag(updiag)
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
-        for(j in 1:ndep){
-          ada <- adaptive(attempts = attempt[dep.i[1]-1 + j], acceptance = accept[dep.i[1]-1 + j], sd.p = updiag[j])
+        for(j in 1:(length(df.i) + ndep)){
+          ada <- adaptive(attempts = attempt[depdf.i[j]], acceptance = accept[depdf.i[j]], sd.p = updiag[j])
           updiag[j] <- ada$sd/updiag[j]
           accept[dep.i-1+j] <- ada$acc
           attempt[dep.i-1+j] <- ada$att
@@ -598,17 +628,17 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       }
       if(b > 2000L && b < burnin && (b %% 200) == 0){
         mb <- max(b-1000, 200)
-        marg.pcov <- marg.pcov + 0.1 * (cov(res[mb:b, 1:(D+1)])  + 1e-4 * diag(D + 1) - marg.pcov)
-        dep.pcov <- dep.pcov + 0.1 * (cov(res[mb:b, dep.i]) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
+        marg.pcov <- marg.pcov + 0.1 * (cov(res[mb:b, c(1:D, shape.i)])  + 1e-4 * diag(D + 1) - marg.pcov)
+        dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, c(dep.i, df.i)])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
       }
       if(b > 200 && b < burnin && (b %% 200) == 0){
-        if(model == "xstud"){
-          df.sdp <- sqrt(df.pcov)
-          ada <- adaptive(attempts = attempt[df.i], acceptance = accept[df.i], sd.p = df.sdp)
-          df.pcov <- as.matrix(ada$sd^2)
-          accept[df.i] <- ada$acc
-          attempt[df.i] <- ada$att
-        }
+        # if(model == "xstud"){
+        #   df.sdp <- sqrt(df.pcov)
+        #   ada <- adaptive(attempts = attempt[df.i], acceptance = accept[df.i], sd.p = df.sdp)
+        #   df.pcov <- as.matrix(ada$sd^2)
+        #   accept[df.i] <- ada$acc
+        #   attempt[df.i] <- ada$att
+        # }
         if(geoaniso){
           mb <- max(b-1000, 200)
           aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-5 * diag(2) - aniso.pcov)

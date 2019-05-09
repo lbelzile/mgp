@@ -41,7 +41,7 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
 
   slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
   slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
-  filename <- paste0(filename, ifelse(slurm_jobid == "", "", "_"), slurm_jobid, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid)
+  filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
 
 
   model <- match.arg(model)
@@ -117,7 +117,7 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
     if(is.null(marg.pcov) || is.null(scale.c) || is.null(shape.c)){
       # Starting values for the parameters
       # Independence likelihood for marginal parameters with GP likelihood pointwise
-      margpars <- sapply(1:D, function(j){mev::fit.gpd(xdat = as.vector(dat[,j]), threshold = mthresh[j])$est})
+      margpars <- suppressWarnings(sapply(1:D, function(j){mev::fit.gpd(xdat = as.vector(dat[,j]), threshold = mthresh[j])$est}))
       mean0 <- c(margpars[1,], mean(margpars[2,]))
     } else{
       mean0 <- c(scale.c, shape.c)
@@ -171,6 +171,7 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
   # set number of parameters, minus regression parameters (separate containers appended via cbind to res)
   npar <- length(scale.c) + length(shape.c) + ndep + ifelse(geoaniso, 2, 0)
   # Positions of parameters for saving
+  scale.i <- 1:D
   shape.i <- D + 1
   if(model %in% c("br", "xstud")){
     dep.i <- (D + 2):(D + 1 + length(dep.c))
@@ -231,7 +232,7 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
         return(list(Sigma = Sigma, df = df))
       } else if(model == "br"){
         Lambda <- dep.fun(distm, par = dep)
-        return(par <- list(Lambda = Lambda))
+        return(list(Lambda = Lambda))
       }
     }
     if(geoaniso){
@@ -256,14 +257,6 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
                 scale = scale, shape = shape, lambdau = lambdau, riskr = "max",
                 par = par, map = FALSE, ...)
     }
-    idat <- imputefn(scale = scale.c, shape = shape.c, par = par.c)
-    loglikfn <- function(scale, shape, par, ...){
-      # Initial evaluation of the log-likelihood
-      likmgp(dat = idat, thresh = thresh, loc = rep(0, D), scale = scale,
-             shape = shape, par = par, model = model, likt = likt, lambdau = lambdau,
-             B1 = B1, genvec1 = genvec1, ncores = ncores, ntot = ntot)
-    }
-    loglik.c <- loglikfn(scale = scale.c, shape = shape.c, par = par.c)
 
 
   # Set block update size for scale parameters
@@ -524,6 +517,15 @@ da.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), 
         }
       }
     }
+    if(b %% 300){
+      par(mfrow = c(2,2))
+      plot(res[(max(b-1000, 200):b),scale.i[1]])
+      plot(res[(max(b-1000, 200):b),shape.i[1]])
+      plot(res[(max(b-1000, 200):b),dep.i[1]])
+      plot(res[(max(b-1000, 200):b),dep.i[2]])
+
+    }
+
     if(b %% verbose == 0){
       cat("Current values: ", round(c(mean(scale.c), shape.c, dep.c), 2), "\n")
       elapsed.time <- round((proc.time()[3] - time.0) / 60 / 60, 2)

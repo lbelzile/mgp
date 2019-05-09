@@ -13,7 +13,7 @@ clikmgp(dat, thresh, mthresh = thresh, loc, scale, shape, par,
 
 \item{thresh}{functional threshold for the maximum}
 
-\item{mthresh}{vector of individuals mthresholds under which observations are censored}
+\item{mthresh}{vector of individuals thresholds under which observations are censored}
 
 \item{loc}{vector of location parameter for the marginal generalized Pareto distribution}
 
