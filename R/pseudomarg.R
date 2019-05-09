@@ -149,7 +149,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   #Copy dependence parameters
   dep.c <- start$dep
   # Constant for scaling of covariance matrix
-  ckst <- 2.38 * 2.38 / length(dep.c)
+
   ndep <- length(dep.c)
   if(ndep == 0){
     stop("Invalid dependence parameter `dep` in `start`")
@@ -218,10 +218,10 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     dep.pcov <- dep.npcov
     dep.lb <- c(dep.lb, df.lb)
     dep.ub <- c(dep.ub, Inf)
-    depdf.i <- c(dep.i, df.i)
+    dep.i <- c(dep.i, df.i)
+    ndep <- ndep + 1L
   } else{
     df.pcov <- NULL
-    df.i <- NULL
   }
   lscalelm.i <- (npar+1):(npar + ncol(Xm) + 2)
   npar <- npar + ncol(Xm) + 2
@@ -231,7 +231,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   } else{
     transform.fn <- identity
   }
-
+  ckst <- 2.38 * 2.38 / ndep
 
   # Hyperpriors for Bayesian linear model
   ols <- lm(log(scale.c) ~ -1 + Xm)
@@ -483,9 +483,9 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     if(model %in% c("br", "xstud")){
       if(model == "xstud"){
         dep.loglikfn <- function(dep){
-          Sigma <- dep.fun(distm.c, dep[1:ndep])
+          Sigma <- dep.fun(distm.c, dep)
           #par = list(Sigma = Sigma, df = par.c$df)
-          par = list(Sigma = Sigma, df = dep[length(dep)])
+          par = list(Sigma = Sigma, df = dep[ndep])
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
           ll
@@ -504,21 +504,16 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       }
       # Perform first updates parameter by parameter
       if(b < min(burnin, 2000L)){
-        for(i in 1:ndep){
-          update <- mh.fun(cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
-                              ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn, transform = transform)
-          if(update$accept){
-            par.c <-  attributes(update$ll)$par
-            loglik.c <- update$ll
-            if(model == "xstud"){
-              dep.c <- update$cur[1:ndep]
-              df.c <- update$cur[ndep+1]
-            } else{
+         for(i in 1:ndep){
+            update <- mh.fun(cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
+                             ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn, transform = transform)
+            if(update$accept){
+              par.c <-  attributes(update$ll)$par
+              loglik.c <- update$ll
               dep.c <- update$cur
+              accept[dep.i[i]] <- accept[dep.i[i]] + 1L
             }
-            accept[dep.i[i]] <- accept[dep.i[i]] + 1L
           }
-        }
       } else{
         update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
                             ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn)
@@ -526,15 +521,8 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           accept[dep.i] <- accept[dep.i] + 1L
           par.c <-  attributes(update$ll)$par
           loglik.c <- update$ll
-          if(model == "xstud"){
-            dep.c <- update$cur[1:ndep]
-            df.c <- update$cur[ndep+1]
-            accept[df.i] <- accept[df.i] + 1L
-          } else{
-           dep.c <- update$cur
-          }
-        }
-
+          dep.c <- update$cur
+      }
       }
 
       if(geoaniso){
@@ -543,7 +531,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
             aniso[2] <- wrapAng(aniso[2])
             distm <- distg(loc = loc, scale = aniso[1], rho = aniso[2])
             Sigma <- dep.fun(distm, dep.c)
-            par = list(Sigma = Sigma, df = df.c)
+            par = list(Sigma = Sigma, df = dep.c[ndep])
             ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
@@ -593,9 +581,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         if(geoaniso){
           res[i, aniso.i] <- aniso.c
         }
-        if(model == "xstud"){
-          res[i, df.i] <- df.c
-        }
       }
       res[i, lscalelm.i] <- c(lscale.hyp.mean.c, lscale.hyp.tausq.c, lscale.hyp.rho.c)
       if(model == "lgm" && !cshape){
@@ -618,11 +603,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         marg.pcov <- diag(updiag) %*% marg.pcov %*% diag(updiag)
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
-        for(j in 1:(length(df.i) + ndep)){
-          ada <- adaptive(attempts = attempt[depdf.i[j]], acceptance = accept[depdf.i[j]], sd.p = updiag[j])
+        for(j in 1:ndep){
+          ada <- adaptive(attempts = attempt[dep.i[j]], acceptance = accept[dep.i[j]], sd.p = updiag[j])
           updiag[j] <- ada$sd/updiag[j]
-          accept[dep.i-1+j] <- ada$acc
-          attempt[dep.i-1+j] <- ada$att
+          accept[dep.i[j]] <- ada$acc
+          attempt[dep.i[j]] <- ada$att
         }
         dep.pcov <- diag(updiag) %*% dep.pcov %*% diag(updiag)
       }
@@ -658,13 +643,13 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       cat("  Remaining time:", remaining.time, "hours\n\n")
     }
     if(b %% saveinterm == 0){
-      save(res, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
+      save(res, dat, Xm, lpost, dep.pcov, marg.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
     }
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
-  save(res, time, dat, Xm, lpost, dep.pcov, marg.pcov, df.pcov, aniso.pcov, model,  file = paste0(filename, ".RData"))
+  save(res, time, dat, Xm, lpost, dep.pcov, marg.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
   invisible(return(list(res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
-                       dep.pcov = dep.pcov, marg.pcov = marg.pcov, df.pcov = df.pcov, aniso.pcov = aniso.pcov, model = model)))
+                       dep.pcov = dep.pcov, marg.pcov = marg.pcov, aniso.pcov = aniso.pcov, model = model)))
 }
 
 
