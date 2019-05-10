@@ -4,11 +4,11 @@
 \alias{da.mgp}
 \title{Data augmentation with a pseudo-marginal Markov chain Monte Carlo algorithm for multivariate generalized Pareto models}
 \usage{
-da.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"),
-  coord, start, numiter = 40000L, burnin = 5000L, thin = 1L,
-  verbose = 50L, filename, keepburnin = TRUE, geoaniso = TRUE,
+da.mgp(dat, mthresh, thresh, lambdau = 1, coord, start,
+  numiter = 40000L, burnin = 5000L, thin = 1L, verbose = 50L,
+  filename, keepburnin = TRUE, geoaniso = TRUE,
   blockupsize = ncol(dat), likt = c("mgp", "pois", "binom"),
-  saveinterm = 500L, ...)
+  transform = FALSE, saveinterm = 500L, ...)
 }
 \arguments{
 \item{dat}{n by D matrix of observations}
@@ -18,8 +18,6 @@ da.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"),
 \item{thresh}{functional max threshold determining the risk region}
 
 \item{lambdau}{probability of exceedance of the threshold for censored observations}
-
-\item{model}{dependence model, either of \code{"br"}, \code{"xstud"} or \code{"lgm"}, in which case the model uses the independence likelihood with generalized Pareto margins}
 
 \item{coord}{matrix of coordinates, with longitude and latitude in the first two columns and additional covariates for the latent Gaussian model}
 
@@ -31,7 +29,6 @@ da.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"),
 \item\code{dep}: initial values for the dependence function.
 \item\code{dep}: dependence function, with distance matrix as first argument and \code{dep} as second argument.
 \item\code{aniso}: initial values for the anisotropy parameters, scale and angle.
-\item\code{df}: degrees of freedom (if \code{model == "xstud"}).
 \item\code{dep.lb}: lower bounds for the dependence parameters
 \item\code{dep.ub}: upper bounds for the dependence parameters
 }

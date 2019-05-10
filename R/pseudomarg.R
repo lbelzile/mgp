@@ -515,13 +515,13 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
             }
           }
       } else{
-        update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
+          update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
                             ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn)
         if(update$accept){
-          accept[dep.i] <- accept[dep.i] + 1L
           par.c <-  attributes(update$ll)$par
           loglik.c <- update$ll
           dep.c <- update$cur
+          accept[dep.i] <- accept[dep.i] + 1L
       }
       }
 
@@ -591,7 +591,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     # Adapt covariance matrix, but using only previous iterations
     # Stop adapting after burnin
     if(model != "lgm" && b < burnin){
-      if(b %% 20*thin == 0 && b > 200L){
+      if(b %% 20*thin == 0 && b > 200L && b <= 2000L){
         #Update covariance matrix of the marginal proposals - only diagonal elements to begin with
         updiag <- sqrt(diag(marg.pcov))
         for(j in 1:(D+1)){ #scale and shape parameters
@@ -601,6 +601,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           attempt[j] <- ada$att
         }
         marg.pcov <- diag(updiag) %*% marg.pcov %*% diag(updiag)
+
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
         for(j in 1:ndep){
@@ -610,11 +611,10 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           attempt[dep.i[j]] <- ada$att
         }
         dep.pcov <- diag(updiag) %*% dep.pcov %*% diag(updiag)
-      }
-      if(b > 2000L && b < burnin && (b %% 200) == 0){
+        } else if(b > 2000L && b < burnin && (b %% 200) == 0){
         mb <- max(b-1000, 200)
         marg.pcov <- marg.pcov + 0.1 * (cov(res[mb:b, c(1:D, shape.i)])  + 1e-4 * diag(D + 1) - marg.pcov)
-        dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, c(dep.i, df.i)])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
+        dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, dep.i])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
       }
       if(b > 200 && b < burnin && (b %% 200) == 0){
         # if(model == "xstud"){

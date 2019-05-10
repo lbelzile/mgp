@@ -173,7 +173,7 @@ rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(co
       logratio[j] <- log(1/(cur[j] - lbound[j]) + 1/(ubound[j] - cur[j])) - log(1/(prop[j] - lbound[j]) + 1/(ubound[j] - prop[j]))
     }
   }
-  return(list(prop = prop, trprop = tr.prop, logjac = logratio))
+  return(list(prop = as.vector(prop), trprop = as.vector(tr.prop), logjac = sum(logratio)))
 }
 
 #' Variance adaptation
@@ -540,7 +540,7 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
       propRW <- rprop.rwmh(cur = cur[ind], cov = as.matrix(pcov[ind, ind]), lbound = lb, ubound = ub)
       prop <- cur
       prop[ind] <- propRW$prop
-      jac <- propRW$logratio
+      jac <- propRW$logjac
   } else{
     # Copy value
     prop <- cur

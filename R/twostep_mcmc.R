@@ -3,47 +3,20 @@
 #' The algorithm estimates marginal parameters in a preliminary run, then fix the latter to the posterior median
 #' and samples from the dependence parameters in a second time.
 #'
-#' @param dat n by D matrix of observations
-#' @param mthresh vector of marginal thresholds under which data are censored
-#' @param thresh functional max threshold determining the risk region
-#' @param likt string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.
-#' @param model dependence model, either of \code{"br"}, \code{"xstud"} or \code{"lgm"}, in which case the model uses the independence likelihood with generalized Pareto margins
-#' @param coord matrix of coordinates, with longitude and latitude in the first two columns and additional covariates for the latent Gaussian model
-#' @param censor logical; should censored likelihood be used? Default to \code{TRUE}
-#' @param saveinterm integer indicating when to save results. Default to \code{500L}.
-#' @param start named list with starting values for the parameters, with arguments:
-#' \itemize{
-#' \item\code{scale}: a \code{D} vector of scale parameters, strictly positive.
-#' \item\code{shape}: a scale containing the shape and satisfying support constraints for all sites.
-#' \item\code{dep}: initial values for the dependence function.
-#' \item\code{dep}: dependence function, with distance matrix as first argument and \code{dep} as second argument.
-#' \item\code{aniso}: initial values for the anisotropy parameters, scale and angle.
-#' \item\code{df}: degrees of freedom (if \code{model == "xstud"}).
-#' \item\code{dep.lb}: lower bounds for the dependence parameters
-#' \item\code{dep.ub}: upper bounds for the dependence parameters
-#' }
-#' If any of \code{scale}, \code{shape} are missing, the function will attempt to find starting values.
-#' @param geoaniso logical; should geometric anisotropy be included? Default to \code{TRUE}.
-#' @param lambdau probability of exceedance of the threshold for censored observations
-#' @param numiter number of iterations to be returned
-#' @param thin thining parameter; only every \code{thin} iteration is saved
-#' @param burnin number of initial parameters for adaptation and discarded values.
-#' @param verbose report current values via print every \code{verbose} iterations.
-#' @param filename name of file for save.
-#' @param keepburnin logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.
+#' @inheritParams mcmc.mgp
 #' @inheritDotParams clikmgp
 #' @export
 #' @keywords internal
 #' @return a list with \code{res} containing the results of the chain
 twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), coord, start,
-                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, censor = TRUE, filename,
+                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, transform = FALSE, censor = TRUE, filename,
                       keepburnin = TRUE, geoaniso = TRUE, likt = c("mgp","pois","binom"),
                       saveinterm = 500L, ...){
 
   slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
   slurm_jobid <- Sys.getenv('SLURM_JOB_ID')
-  filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
-
+  filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, "_",
+                     model, "_twostep", ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
 
   model <- match.arg(model)
   likt <- match.arg(likt)
@@ -122,7 +95,6 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   #Copy dependence parameters
   dep.c <- start$dep
   # Constant for scaling of covariance matrix
-  ckst <- 2.38 * 2.38 / length(dep.c)
   ndep <- length(dep.c)
   if(ndep == 0){
     stop("Invalid dependence parameter `dep` in `start`")
@@ -164,7 +136,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   npar <- length(scale.c) + length(shape.c) + ndep + ifelse(geoaniso, 2, 0)
   # Positions of parameters for saving
   scale.i <- 1:length(scale.c)
-  shape.i <- length(scale.c) + 1:length(shape.c)
+  shape.i <- (length(scale.c) + 1:length(shape.c))
   dep.i <- (shape.i[length(shape.i)] + 1):(shape.i[length(shape.i)] + length(dep.c))
   if(geoaniso){
     aniso.i <- (npar-1):npar
@@ -178,9 +150,26 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     df.lb <- 1+1e-5
     npar <- npar + 1L
     df.i <- npar
+    # Port to dep. to perform updates together with dep
+    dep.c <- c(dep.c, df.c)
+    dep.npcov <- matrix(0, ndep + 1, ndep + 1)
+    dep.npcov[1:ndep, 1:ndep] <- dep.pcov
+    dep.npcov[ndep + 1, ndep + 1] <- df.pcov
+    dep.pcov <- dep.npcov
+    dep.lb <- c(dep.lb, df.lb)
+    dep.ub <- c(dep.ub, Inf)
+    dep.i <- c(dep.i, df.i)
+    ndep <- ndep + 1L
   } else{
     df.pcov <- NULL
   }
+
+  if(transform){
+    transform.fn <- function(x){transfo.pars(x, lbound = dep.lb, ubound = dep.ub)}
+  } else{
+    transform.fn <- identity
+  }
+  ckst <- 2.38 * 2.38 / ndep
   lscalelm.i <- (npar+1):(npar + ncol(Xm) + 2)
   npar <- npar + ncol(Xm) + 2
   if(!cshape){
@@ -188,12 +177,11 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     npar <- npar + ncol(Xm) + 2
   }
   #Function to create list with parameter, input is model dependent
-    makepar <- function(dep, model = c("br", "xstud"), distm, df = NULL){
+    makepar <- function(dep, model = c("br", "xstud"), distm){
       model <- match.arg(model)
       if(model == "xstud"){
-        if(is.null(df)){stop("Missing `df` in `makepar` function")}
         Sigma <- dep.fun(distm, par = dep)
-        return(list(Sigma = Sigma, df = df))
+        return(list(Sigma = Sigma, df = df[ndep]))
       } else if(model == "br"){
         Lambda <- dep.fun(distm, par = dep)
         return(par <- list(Lambda = Lambda))
@@ -212,15 +200,13 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     }
     ntot <- ellips$ntot
 
-    par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
+    par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
     # keep only marginal exceedances
     ldat <- apply(dat, 2, function(col){as.vector(col[col>0])})
-
-
   # Define containers
   lpost <- rep(0, B)
-  accept <- rep(0L, ndep + ifelse(model == "xstud", 1, 0))
-  attempt <- rep(0L, ndep + ifelse(model == "xstud", 1, 0))
+  accept <- rep(0L, ndep)
+  attempt <- rep(0L, ndep)
   res <- matrix(data = 0, ncol = npar, nrow = B)
   margpar <- mcmc.mgp(dat = dat, mthresh = mthresh, thresh = thresh ,
                            lambdau = lambdau, model = "lgm", coord = coord,
@@ -238,7 +224,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   } else{
    shape.c <- median( margpar$res[-(1:min(burnin, 2000)),shape.i], na.rm = TRUE)
   }
-  par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
+  par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
   if(!censor){
     loglikfn <- function(scale, shape, par, ...){
       # Initial evaluation of the log-likelihood
@@ -262,6 +248,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   ####################          LOOP         #############################
   ########################################################################
   thin <- as.integer(thin)
+  browser()
   for(b in 1:B){
 
     attempt <- attempt + 1L
@@ -269,11 +256,11 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     ####           UPDATE DEPENDENCE PARAMETERS             ####
     # adding prior contribution for the anisotropy parameters
 
-    if(model %in% c("br", "xstud")){
       if(model == "xstud"){
         dep.loglikfn <- function(dep){
           Sigma <- dep.fun(distm.c, dep)
-          par = list(Sigma = Sigma, df = par.c$df)
+          #par = list(Sigma = Sigma, df = par.c$df)
+          par = list(Sigma = Sigma, df = dep[ndep])
           ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
           attributes(ll)$par <- par
           ll
@@ -281,7 +268,11 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
       } else{
         dep.loglikfn <- function(dep){
           par <- list(Lambda = dep.fun(distm.c, dep))
-          ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+          if(isTRUE(any(is.nan(par$Lambda)))){ #If alpha too close to zero, invalid matrix
+            ll = -Inf
+          } else{
+            ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+          }
           attributes(ll)$par <- par
           ll
         }
@@ -290,7 +281,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
       if(b < min(burnin, 2000L)){
         for(i in 1:ndep){
           update <- mh.fun(cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
-                              ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn)
+                           ll = loglik.c, pcov = dep.pcov, cond = TRUE, prior.fun = dep.lpriorfn, transform = transform)
           if(update$accept){
             par.c <-  attributes(update$ll)$par
             loglik.c <- update$ll
@@ -300,22 +291,22 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
         }
       } else{
         update <- mh.fun(cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
-                            ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, prior.fun = dep.lpriorfn)
+                         ll = loglik.c, pcov = dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn)
         if(update$accept){
           accept[dep.i] <- accept[dep.i] + 1L
           par.c <-  attributes(update$ll)$par
           loglik.c <- update$ll
           dep.c <- update$cur
         }
-
       }
+
       if(geoaniso){
         if(model == "xstud"){
           aniso.loglikfn <- function(aniso){
             aniso[2] <- wrapAng(aniso[2])
             distm <- distg(loc = loc, scale = aniso[1], rho = aniso[2])
             Sigma <- dep.fun(distm, dep.c)
-            par = list(Sigma = Sigma, df = df.c)
+            par = list(Sigma = Sigma, df = dep.c[ndep])
             ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
@@ -327,14 +318,18 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
             distm <- distg(loc = loc, scale = aniso[1], rho = aniso[2])
             Lambda <- dep.fun(distm, dep.c)
             par = list(Lambda = Lambda)
-            ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+            if(isTRUE(any(is.nan(par$Lambda)))){ #If alpha too close to zero, invalid matrix
+              ll = -Inf
+            } else{
+              ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
+            }
             attributes(ll)$par <- par
             attributes(ll)$distm <- distm
             ll
           }
         }
         update <- mh.fun(cur = aniso.c, lb = aniso.lb, ind = 1:2, lik.fun = aniso.loglikfn,
-                            ll = loglik.c, pcov = aniso.pcov, cond = FALSE, prior.fun = aniso.lpriorfn)
+                         ll = loglik.c, pcov = aniso.pcov, cond = FALSE, prior.fun = aniso.lpriorfn)
         if(update$accept){
           accept[aniso.i] <- accept[aniso.i] + 1L
           par.c <-  attributes(update$ll)$par
@@ -345,28 +340,20 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
         }
 
       }
-    }
     # Save current value of the log-likelihood and of all parameters at the end of the iteration
     if(thin == 1 || b %% thin == 0){
       i = as.integer(b/thin)
-      if(model %in% c("xstud", "br")){
-        lpost[i] <- loglik.c
-      }
-      if(model %in% c("br", "xstud")){
-        res[i, dep.i] <- dep.c
-        if(geoaniso){
-          res[i, aniso.i] <- aniso.c
-        }
-        if(model == "xstud"){
-          res[i, df.i] <- df.c
-        }
+      lpost[i] <- loglik.c
+      res[i, dep.i] <- dep.c
+      if(geoaniso){
+        res[i, aniso.i] <- aniso.c
       }
     }
 
     # Adapt covariance matrix, but using only previous iterations
     # Stop adapting after burnin
     if(b < burnin){
-      if(b %% 20*thin == 0 && b > 200L){
+      if(b %% 20*thin == 0 && b > 200L && b <= 2000L){
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
         for(j in 1:ndep){
@@ -379,19 +366,12 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
       }
       if(b > 2000L && b < burnin && (b %% 200) == 0){
         mb <- max(b - 1000, 200)
-        dep.pcov <- dep.pcov + 0.1 * (cov(res[mb:b, dep.i]) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
+        dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, dep.i])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
       }
       if(b > 200 && b < burnin && (b %% 200) == 0){
-        if(model == "xstud"){
-          df.sdp <- sqrt(df.pcov)
-          ada <- adaptive(attempts = attempt[ndep+1], acceptance = accept[ndep+1], sd.p = df.sdp)
-          df.pcov <- as.matrix(ada$sd^2)
-          accept[ndep+1] <- ada$acc
-          attempt[ndep+1] <- ada$att
-        }
         if(geoaniso){
           mb <- max(b-1000, 200)
-          aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-5 * diag(2) - aniso.pcov)
+          aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-4 * diag(2) - aniso.pcov)
         }
       }
     }
@@ -403,14 +383,11 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
       cat("  Remaining time:", remaining.time, "hours\n\n")
     }
     if(b %% saveinterm == 0){
-      save(res, dat, Xm, lpost, dep.pcov, df.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
+      save(res, dat, Xm, lpost, dep.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
     }
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
-  save(res, time, dat, Xm, lpost, dep.pcov, df.pcov, aniso.pcov, model,  file = paste0(filename, ".RData"))
+  save(res, time, dat, Xm, lpost, dep.pcov, aniso.pcov, model,  file = paste0(filename, ".RData"))
   invisible(return(list(res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
-                       dep.pcov = dep.pcov, df.pcov = df.pcov, aniso.pcov = aniso.pcov, model = model)))
+                       dep.pcov = dep.pcov, aniso.pcov = aniso.pcov, model = model)))
 }
-
-
-

@@ -6,9 +6,9 @@
 \usage{
 twostep.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br",
   "xstud"), coord, start, numiter = 40000L, burnin = 5000L,
-  thin = 1L, verbose = 50L, censor = TRUE, filename,
-  keepburnin = TRUE, geoaniso = TRUE, likt = c("mgp", "pois",
-  "binom"), saveinterm = 500L, ...)
+  thin = 1L, verbose = 50L, transform = FALSE, censor = TRUE,
+  filename, keepburnin = TRUE, geoaniso = TRUE, likt = c("mgp",
+  "pois", "binom"), saveinterm = 500L, ...)
 }
 \arguments{
 \item{dat}{n by D matrix of observations}
@@ -27,6 +27,7 @@ twostep.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br",
 \itemize{
 \item\code{scale}: a \code{D} vector of scale parameters, strictly positive.
 \item\code{shape}: a scale containing the shape and satisfying support constraints for all sites.
+\item\code{marg.pcov}: initial proposal covariance for the marginal parameters (scale and shape).
 \item\code{dep}: initial values for the dependence function.
 \item\code{dep}: dependence function, with distance matrix as first argument and \code{dep} as second argument.
 \item\code{aniso}: initial values for the anisotropy parameters, scale and angle.
@@ -34,7 +35,7 @@ twostep.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br",
 \item\code{dep.lb}: lower bounds for the dependence parameters
 \item\code{dep.ub}: upper bounds for the dependence parameters
 }
-If any of \code{scale}, \code{shape} are missing, the function will attempt to find starting values.}
+If any of \code{scale}, \code{shape} or \code{marg.pcov} are missing, the function will attempt to find starting values.}
 
 \item{numiter}{number of iterations to be returned}
 
@@ -43,6 +44,9 @@ If any of \code{scale}, \code{shape} are missing, the function will attempt to f
 \item{thin}{thining parameter; only every \code{thin} iteration is saved}
 
 \item{verbose}{report current values via print every \code{verbose} iterations.}
+
+\item{transform}{logical; should parameters be sampled on an unconstrained space if they are bounded. Default is \code{FALSE}, in which case
+the Metropolis-Hastings proposals are performed by sampling from multivariate truncated Gaussian}
 
 \item{censor}{logical; should censored likelihood be used? Default to \code{TRUE}}
 
