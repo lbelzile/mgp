@@ -22,28 +22,30 @@
 #' @return new value of \code{lambda}
 #' @export
 #' @seealso \code{\link[spatial.gev.bma]{gev.update.lambda}}
-updt.range <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf){
+updt.range <- function(tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, maxstep = Inf) {
   attributes(lambda) <- list(accept = FALSE)
-  logdet <- function(A) {return(2 * sum(log(diag(chol(A)))))}
-  l.prime <-  function (tau, alpha, lambda, D, a, b){
-    E.l <- exp(-1/lambda * D)
+  logdet <- function(A) {
+    return(2 * sum(log(diag(chol(A)))))
+  }
+  l.prime <- function(tau, alpha, lambda, D, a, b) {
+    E.l <- exp(-1 / lambda * D)
     diag(E.l) <- diag(E.l) + 1e-05
     E.inv <- solve(E.l)
-    F.l <- 1/lambda^2 * D * E.l
+    F.l <- 1 / lambda^2 * D * E.l
     M.l <- E.inv %*% (-F.l) %*% E.inv
-    res <- -0.5 * sum(diag(E.inv %*% F.l)) - 0.5 * alpha * t(tau) %*% M.l %*% tau - b + (a - 1)/lambda
+    res <- -0.5 * sum(diag(E.inv %*% F.l)) - 0.5 * alpha * t(tau) %*% M.l %*% tau - b + (a - 1) / lambda
     return(res[1])
   }
-  l.double.prime <- function (tau, alpha, lambda, D, a, b) {
-    E.l <- exp(-1/lambda * D)
+  l.double.prime <- function(tau, alpha, lambda, D, a, b) {
+    E.l <- exp(-1 / lambda * D)
     diag(E.l) <- diag(E.l) + 1e-05
     E.inv <- solve(E.l)
-    F.l <- 1/lambda^2 * D * E.l
+    F.l <- 1 / lambda^2 * D * E.l
     M.l <- E.inv %*% (-F.l) %*% E.inv
-    G.l <- -2/lambda^3 * (D * E.l) + 1/lambda^2 * (D * F.l)
+    G.l <- -2 / lambda^3 * (D * E.l) + 1 / lambda^2 * (D * F.l)
     L.l <- M.l %*% F.l + E.inv %*% G.l
     N.l <- M.l %*% (-F.l) %*% E.inv + E.inv %*% (-G.l) %*% E.inv + E.inv %*% (-F.l) %*% M.l
-    res <- -0.5 * sum(diag(L.l)) - 0.5 * alpha * t(tau) %*% N.l %*%  tau - (a - 1) * lambda^(-2)
+    res <- -0.5 * sum(diag(L.l)) - 0.5 * alpha * t(tau) %*% N.l %*% tau - (a - 1) * lambda^(-2)
     return(res[1])
   }
   stopifnot(maxstep > 0)
@@ -51,40 +53,44 @@ updt.range <- function (tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2,
   l.double.curr <- l.double.prime(tau, alpha, lambda, di, a, b)
   d.curr <- -l.double.curr
   b.curr <- discount * l.curr / d.curr + lambda
-if (isTRUE(d.curr > 0)) {
-  lambda.new <- TruncatedNormal::mvrandn(pmax(lb, lambda - maxstep), lambda + maxstep, Sig = matrix(1/d.curr), n = 1, mu = b.curr)
-  #rnorm(1, b.curr/d.curr, sd = sqrt(1/d.curr))
-  l.new <- l.prime(tau, alpha, lambda.new, di, a, b)
-  l.double.new <- l.double.prime(tau, alpha, lambda.new, di, a, b)
-  d.new <- -l.double.new
-  b.new <- discount * l.new / d.new + lambda.new
-  if (isTRUE(d.new > 0)) {
-    E.l.curr <- exp(-1/lambda * di)
-    diag(E.l.curr) <- diag(E.l.curr) + 1e-05
-    E.l.curr.inv <- solve(E.l.curr)
-    E.l.new <- exp(-1/lambda.new * di)
-    diag(E.l.new) <- diag(E.l.new) + 1e-05
-    E.l.new.inv <- solve(E.l.new)
-    L.curr <- -0.5 * alpha * t(tau) %*% E.l.curr.inv %*%
-      tau - 0.5 * logdet(E.l.curr)
-    L.new <- -0.5 * alpha * t(tau) %*% E.l.new.inv %*%
-      tau - 0.5 * logdet(E.l.new)
-    prior.curr <- dgamma(lambda, a, b, log = TRUE)
-    prior.new <- dgamma(lambda.new, a, b, log = TRUE)
-    prop.curr <- dnorm(lambda.new, b.curr, sd = sqrt(1/d.curr), log = TRUE) -
-      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda - maxstep) - b.curr,
-                                                   u = lambda + maxstep - b.curr, Sig = 1/d.curr, n = 1)$prob))
-    prop.new <- dnorm(lambda, b.new, sd = sqrt(1/d.new), log = TRUE) -
-      log(suppressWarnings(TruncatedNormal::mvNcdf(l = pmax(lb, lambda.new - maxstep) - b.new,
-                                                   u = lambda.new + maxstep - b.new, Sig = 1/d.new, n = 1)$prob))
-    mh <- L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr
-    if (isTRUE(log(runif(1)) < mh)) {
-      lambda <- lambda.new
-      attributes(lambda) <- list(accept = TRUE)
+  if (isTRUE(d.curr > 0)) {
+    lambda.new <- TruncatedNormal::mvrandn(pmax(lb, lambda - maxstep), lambda + maxstep, Sig = matrix(1 / d.curr), n = 1, mu = b.curr)
+    # rnorm(1, b.curr/d.curr, sd = sqrt(1/d.curr))
+    l.new <- l.prime(tau, alpha, lambda.new, di, a, b)
+    l.double.new <- l.double.prime(tau, alpha, lambda.new, di, a, b)
+    d.new <- -l.double.new
+    b.new <- discount * l.new / d.new + lambda.new
+    if (isTRUE(d.new > 0)) {
+      E.l.curr <- exp(-1 / lambda * di)
+      diag(E.l.curr) <- diag(E.l.curr) + 1e-05
+      E.l.curr.inv <- solve(E.l.curr)
+      E.l.new <- exp(-1 / lambda.new * di)
+      diag(E.l.new) <- diag(E.l.new) + 1e-05
+      E.l.new.inv <- solve(E.l.new)
+      L.curr <- -0.5 * alpha * t(tau) %*% E.l.curr.inv %*%
+        tau - 0.5 * logdet(E.l.curr)
+      L.new <- -0.5 * alpha * t(tau) %*% E.l.new.inv %*%
+        tau - 0.5 * logdet(E.l.new)
+      prior.curr <- dgamma(lambda, a, b, log = TRUE)
+      prior.new <- dgamma(lambda.new, a, b, log = TRUE)
+      prop.curr <- dnorm(lambda.new, b.curr, sd = sqrt(1 / d.curr), log = TRUE) -
+        log(suppressWarnings(TruncatedNormal::mvNcdf(
+          l = pmax(lb, lambda - maxstep) - b.curr,
+          u = lambda + maxstep - b.curr, Sig = 1 / d.curr, n = 1
+        )$prob))
+      prop.new <- dnorm(lambda, b.new, sd = sqrt(1 / d.new), log = TRUE) -
+        log(suppressWarnings(TruncatedNormal::mvNcdf(
+          l = pmax(lb, lambda.new - maxstep) - b.new,
+          u = lambda.new + maxstep - b.new, Sig = 1 / d.new, n = 1
+        )$prob))
+      mh <- L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr
+      if (isTRUE(log(runif(1)) < mh)) {
+        lambda <- lambda.new
+        attributes(lambda) <- list(accept = TRUE)
+      }
     }
   }
-}
-return(lambda)
+  return(lambda)
 }
 
 
@@ -96,30 +102,30 @@ return(lambda)
 #' @return unconstrained transformed vector
 #' @export
 #' @keywords internal
-transfo.pars <- function(cur, lbound, ubound){
-  if(is.vector(cur)){
+transfo.pars <- function(cur, lbound, ubound) {
+  if (is.vector(cur)) {
     D <- length(cur)
     cur <- matrix(cur, nrow = 1)
-  } else if(is.matrix(cur)){
+  } else if (is.matrix(cur)) {
     D <- ncol(cur)
   }
 
   tr.cur <- cur
-  for(j in 1:D){
-    if(lbound[j] == -Inf && ubound[j] == Inf){
-      tr.cur[,j] <- cur[,j]
-    } else if(lbound[j] > -Inf && ubound[j] == Inf){
-      tr.cur[,j] <- log(cur[,j] - lbound[j])
-    } else if(lbound[j] == -Inf && ubound[j] < Inf){
-      tr.cur[,j] <- log(ubound[j] - cur[,j])
-    } else{
-      tr.cur[,j] <-  logit((cur[,j] - lbound[j]) / (ubound[j] - lbound[j]))
+  for (j in 1:D) {
+    if (lbound[j] == -Inf && ubound[j] == Inf) {
+      tr.cur[, j] <- cur[, j]
+    } else if (lbound[j] > -Inf && ubound[j] == Inf) {
+      tr.cur[, j] <- log(cur[, j] - lbound[j])
+    } else if (lbound[j] == -Inf && ubound[j] < Inf) {
+      tr.cur[, j] <- log(ubound[j] - cur[, j])
+    } else {
+      tr.cur[, j] <- logit((cur[, j] - lbound[j]) / (ubound[j] - lbound[j]))
     }
   }
-  if(nrow(cur) == 1){
+  if (nrow(cur) == 1) {
     as.vector(tr.cur)
-  } else{
-   tr.cur
+  } else {
+    tr.cur
   }
 }
 
@@ -138,39 +144,43 @@ transfo.pars <- function(cur, lbound, ubound){
 #' @return a list with components \code{prop}, \code{trprop} and \code{logjac}
 #' @export
 #' @keywords internal
-rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(cov)), ubound = rep(Inf, ncol(cov))){
-  if(is.null(trcur) && is.null(cur)){
+rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(cov)), ubound = rep(Inf, ncol(cov))) {
+  if (is.null(trcur) && is.null(cur)) {
     stop("Either `trcur` or `cur` must be provided")
-  } else if(!is.null(trcur)){
+  } else if (!is.null(trcur)) {
     d <- length(trcur)
     stopifnot(d == dim(cov), length(lbound) == d, length(ubound) == d)
-    tr.cur <-  trcur
-  } else{
+    tr.cur <- trcur
+  } else {
     d <- length(cur)
     stopifnot(d == dim(cov), length(lbound) == d, length(ubound) == d)
     tr.cur <- transfo.pars(cur, lbound = lbound, ubound = ubound)
   }
   prop <- rep(0, d)
   logratio <- rep(0, d)
-  expit <- function(x){1/(1+exp(-x))}
-  logit <- function(x){log(x)-log(1-x)}
-  if(d == 1L){
-    tr.prop <- rnorm(n = 1, mean = tr.cur, sd =  sqrt(cov))
-  } else{
+  expit <- function(x) {
+    1 / (1 + exp(-x))
+  }
+  logit <- function(x) {
+    log(x) - log(1 - x)
+  }
+  if (d == 1L) {
+    tr.prop <- rnorm(n = 1, mean = tr.cur, sd = sqrt(cov))
+  } else {
     tr.prop <- mev::mvrnorm(n = 1, mu = tr.cur, Sigma = cov)
   }
-  for(j in 1:d){
-    if(lbound[j] == -Inf && ubound[j] == Inf){
+  for (j in 1:d) {
+    if (lbound[j] == -Inf && ubound[j] == Inf) {
       prop[j] <- tr.prop[j]
-    } else if(lbound[j] > -Inf && ubound[j] == Inf){
+    } else if (lbound[j] > -Inf && ubound[j] == Inf) {
       prop[j] <- lbound[j] + exp(tr.prop[j])
       logratio[j] <- tr.prop[j] - tr.cur[j]
-    } else if(lbound[j] == -Inf && ubound[j] < Inf){
+    } else if (lbound[j] == -Inf && ubound[j] < Inf) {
       prop[j] <- ubound[j] - exp(tr.prop[j])
       logratio[j] <- tr.prop[j] - tr.cur[j]
-    } else{
+    } else {
       prop[j] <- lbound[j] + (ubound[j] - lbound[j]) * expit(tr.prop[j])
-      logratio[j] <- log(1/(cur[j] - lbound[j]) + 1/(ubound[j] - cur[j])) - log(1/(prop[j] - lbound[j]) + 1/(ubound[j] - prop[j]))
+      logratio[j] <- log(1 / (cur[j] - lbound[j]) + 1 / (ubound[j] - cur[j])) - log(1 / (prop[j] - lbound[j]) + 1 / (ubound[j] - prop[j]))
     }
   }
   return(list(prop = as.vector(prop), trprop = as.vector(tr.prop), logjac = sum(logratio)))
@@ -190,39 +200,45 @@ rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(co
 #' @return a list with components \code{sd}, \code{acc}, \code{att}
 #' @export
 #' @keywords internal
-adaptive <- function(attempts, acceptance, sd.p){
+adaptive <- function(attempts, acceptance, sd.p) {
   stopifnot(sd.p > 0)
-  if(attempts < acceptance){
+  if (attempts < acceptance) {
     stop("Invalid input: the number of attempts must be larger than the number of acceptance")
   }
   att <- attempts
   acc <- acceptance
   newsd <- sd.p
-  if(att > 20){
-    if(acc / att > 0.9){
-      newsd <- sd.p * 1.5;
-      att = 0L; acc <- 0L
-    } else if(acc / att < 0.05){
-      newsd <- sd.p * 0.5;
-      att = 0L; acc <- 0L
+  if (att > 20) {
+    if (acc / att > 0.9) {
+      newsd <- sd.p * 1.5
+      att <- 0L
+      acc <- 0L
+    } else if (acc / att < 0.05) {
+      newsd <- sd.p * 0.5
+      att <- 0L
+      acc <- 0L
     }
   }
-  if(att > 30){
-    if(acc / att > 0.5){
-      newsd <- sd.p * 1.25;
-      att = 0L; acc <- 0L
-    } else if(acc / att < 0.10){
-      newsd <- sd.p * 0.75;
-      att = 0L; acc <- 0L
+  if (att > 30) {
+    if (acc / att > 0.5) {
+      newsd <- sd.p * 1.25
+      att <- 0L
+      acc <- 0L
+    } else if (acc / att < 0.10) {
+      newsd <- sd.p * 0.75
+      att <- 0L
+      acc <- 0L
     }
   }
-  if(att > 50){
-    if(acc / att > 0.35){
-      newsd <- sd.p * 1.1;
-      att = 0L; acc <- 0L
-    } else if(acc / att < 0.2){
-      newsd <- sd.p * 0.95;
-      att = 0L; acc <- 0L
+  if (att > 50) {
+    if (acc / att > 0.35) {
+      newsd <- sd.p * 1.1
+      att <- 0L
+      acc <- 0L
+    } else if (acc / att < 0.2) {
+      newsd <- sd.p * 0.95
+      att <- 0L
+      acc <- 0L
     }
   }
 
@@ -234,20 +250,20 @@ adaptive <- function(attempts, acceptance, sd.p){
 #' @return angle between \eqn{(-\pi/2,\pi/2)}
 #' @keywords internal
 #' @export
-wrapAng <- function(ang){
+wrapAng <- function(ang) {
   stopifnot(length(ang) == 1L)
-  if(ang > -pi/2 && ang < pi/2){
+  if (ang > -pi / 2 && ang < pi / 2) {
     return(ang)
-  } else{
-    stang <- ang %% (2*pi)
-    if(stang > 1.5*pi){
-      return(stang - 2*pi)
-    } else if(stang < 0.5*pi){
+  } else {
+    stang <- ang %% (2 * pi)
+    if (stang > 1.5 * pi) {
+      return(stang - 2 * pi)
+    } else if (stang < 0.5 * pi) {
       return(stang)
-    } else if(stang > pi){
-      return(-0.5*pi + (1.5*pi - stang))
-    } else{
-      return(pi/2 - (stang - pi/2))
+    } else if (stang > pi) {
+      return(-0.5 * pi + (1.5 * pi - stang))
+    } else {
+      return(pi / 2 - (stang - pi / 2))
     }
   }
 }
@@ -272,97 +288,111 @@ wrapAng <- function(ang){
 #' @param maxstep maximum step size for the MCMC (proposal will be at most \code{maxstep} units away from the current value).
 #' @return a vector of scale parameters
 #' @export
-lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.tausq, mmax, discount = 1, maxstep = Inf){
+lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.tausq, mmax, discount = 1, maxstep = Inf) {
   # Gradient and Hessian for the log-gaussian random effect model
-  gradlgauss <- function(x, mu, Q){ c(-1/x- Q %*% (log(x)-mu)*(1/x))}
-  hesslgauss <- function(x, mu, Q){ if(length(x) > 1L){
-    diag(1/x^2) - Q * tcrossprod(1/x,1/x) + diag(c(Q %*% (log(x)-mu))/(x^2))
-  } else{
-    (1- Q) / x^2 + Q * (log(x)-mu)/(x^2)
-  }}
+  gradlgauss <- function(x, mu, Q) {
+    c(-1 / x - Q %*% (log(x) - mu) * (1 / x))
+  }
+  hesslgauss <- function(x, mu, Q) {
+    if (length(x) > 1L) {
+      diag(1 / x^2) - Q * tcrossprod(1 / x, 1 / x) + diag(c(Q %*% (log(x) - mu)) / (x^2))
+    } else {
+      (1 - Q) / x^2 + Q * (log(x) - mu) / (x^2)
+    }
+  }
   # likelihood function
-  llfun <- function(scale, shape, ind = 1:D, ...){
+  llfun <- function(scale, shape, ind = 1:D, ...) {
     scale <- rep(scale, length.out = D)
     shape <- rep(shape, length.out = D)
-    sum(sapply(ind, function(i){mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+    sum(sapply(ind, function(i) {
+      mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])
+    }))
   }
-  if(length(shape) == 1L){
+  if (length(shape) == 1L) {
     cshape <- TRUE
-  } else{
+  } else {
     stopifnot(length(scale) == length(shape))
     cshape <- FALSE
   }
 
   # Componentwise maximum at site to compute bounds for simulating scale
-  if(missing(mmax)){
+  if (missing(mmax)) {
     mmax <- as.vector(unlist(lapply(ldat, max)))
   }
 
 
-  #Start update
+  # Start update
   D <- length(scale)
-  for(k in sample.int(D, D)){
-    #Conditional mean and precision for log-Gaussian - both do not depend on current value of "k"
-    condmean <- c(lscale.mu[k] - solve(lscale.precis[k,k, drop = FALSE]) %*% lscale.precis[k,-k, drop = FALSE] %*% (log(scale[-k]) - lscale.mu[-k]))
-    condprec <- lscale.precis[k,k, drop = FALSE]/lscale.tausq
-    #Lower bound for the scale - simulations are from a truncated Gaussian
-    if(cshape){
-      lbscale <- pmax(-shape*mmax[k], 0, scale[k] - maxstep)
+  for (k in sample.int(D, D)) {
+    # Conditional mean and precision for log-Gaussian - both do not depend on current value of "k"
+    condmean <- c(lscale.mu[k] - solve(lscale.precis[k, k, drop = FALSE]) %*% lscale.precis[k, -k, drop = FALSE] %*% (log(scale[-k]) - lscale.mu[-k]))
+    condprec <- lscale.precis[k, k, drop = FALSE] / lscale.tausq
+    # Lower bound for the scale - simulations are from a truncated Gaussian
+    if (cshape) {
+      lbscale <- pmax(-shape * mmax[k], 0, scale[k] - maxstep)
       ubscale <- pmin(Inf, scale[k] + maxstep)
-    } else{
-      lbscale <- pmax(-shape[k]*mmax[k], 0, scale[k] - maxstep)
+    } else {
+      lbscale <- pmax(-shape[k] * mmax[k], 0, scale[k] - maxstep)
       ubscale <- pmin(Inf, scale[k] + maxstep)
     }
-    #Copy scale, perform Newton discount from current value
+    # Copy scale, perform Newton discount from current value
     scale.p <- scale
-    #Gradient and Hessian at current value
-    fp <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]}) +
+    # Gradient and Hessian at current value
+    fp <- sapply(k, function(j) {
+      mev::gpd.score(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]
+    }) +
       gradlgauss(x = scale[k], mu = condmean, Q = condprec)
-    if(length(k) > 1L){
-      fpp <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]], method = "obs")[1,1]})) +
+    if (length(k) > 1L) {
+      fpp <- diag(sapply(k, function(j) {
+        -mev::gpd.infomat(par = c(scale[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]], method = "obs")[1, 1]
+      })) +
         hesslgauss(x = scale[k], mu = condmean, Q = condprec)
-    } else{
-      fpp <- -mev::gpd.infomat(par = c(scale[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1,1] +
+    } else {
+      fpp <- -mev::gpd.infomat(par = c(scale[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1, 1] +
         hesslgauss(x = scale[k], mu = condmean, Q = condprec)
     }
     continue <- isTRUE(all(eigen(fpp, only.values = TRUE)$values < 0))
-    if(continue){
+    if (continue) {
       # Mean and scale for the proposal - with a damping factor
       Sig1 <- -as.matrix(solve(fpp))
-      mu1 <- c(scale[k] + discount * Sig1 %*% fp);
+      mu1 <- c(scale[k] + discount * Sig1 %*% fp)
       scale.p[k] <- TruncatedNormal::mvrandn(l = lbscale, u = ubscale, mu = mu1, Sig = Sig1, n = 1)
-      #Taylor approximation from proposal - obtain mean and variance for Laplace approximation
-      fp2 <- sapply(k, function(j){mev::gpd.score(par = c(scale.p[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]}) +
+      # Taylor approximation from proposal - obtain mean and variance for Laplace approximation
+      fp2 <- sapply(k, function(j) {
+        mev::gpd.score(par = c(scale.p[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]])[1]
+      }) +
         gradlgauss(x = scale.p[k], mu = condmean, Q = condprec)
-      if(length(k) > 1L){
-        fpp2 <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale.p[j], ifelse(cshape, shape,shape[j])), dat = ldat[[j]], method = "obs")[1,1]})) +           hesslgauss(x = scale.p[k], mu = condmean, Q = condprec)
-      } else{
-        fpp2 <- -mev::gpd.infomat(par = c(scale.p[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1,1] +
-          hesslgauss(x =scale.p[k], mu = condmean, Q = condprec)
+      if (length(k) > 1L) {
+        fpp2 <- diag(sapply(k, function(j) {
+          -mev::gpd.infomat(par = c(scale.p[j], ifelse(cshape, shape, shape[j])), dat = ldat[[j]], method = "obs")[1, 1]
+        })) + hesslgauss(x = scale.p[k], mu = condmean, Q = condprec)
+      } else {
+        fpp2 <- -mev::gpd.infomat(par = c(scale.p[k], ifelse(cshape, shape, shape[k])), dat = ldat[[k]], method = "obs")[1, 1] +
+          hesslgauss(x = scale.p[k], mu = condmean, Q = condprec)
       }
       continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
-      if(continue){
+      if (continue) {
         Sig2 <- -as.matrix(solve(fpp2))
-        mu2 <- c(scale.p[k] + discount * Sig2 %*% fp2);
-       # Jacobian of transformation
+        mu2 <- c(scale.p[k] + discount * Sig2 %*% fp2)
+        # Jacobian of transformation
         jac <- mgp::.dmvnorm_arma(x = t(as.matrix(as.vector(scale[k]))), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
-          mgp::.dmvnorm_arma(x = t(as.matrix(as.vector(scale.p[k]))), mean  = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
+          mgp::.dmvnorm_arma(x = t(as.matrix(as.vector(scale.p[k]))), mean = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu2, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig2), n = 1000)$prob)) +
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbscale - mu1, u = rep(Inf, length(lbscale)), Sig = as.matrix(Sig1), n = 1000)$prob))
 
-        #Evaluate log-density and log-prior
+        # Evaluate log-density and log-prior
         logdens <- llfun(scale = scale, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
         logdens.p <- llfun(scale = scale.p, shape = rep(shape, length.out = length(scale)), ldat = ldat, ind = k)
         # Need not be computed for every update of the parameters - so decouple
-        if(length(k) > 1L){
-          priorA.p <-  dmvnorm.precis(x = log(scale.p[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale.p[k]))
-          priorA <-  dmvnorm.precis(log(scale[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale[k]))
-        } else{
-          priorA.p <-  dnorm(log(scale.p[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale.p[k])
-          priorA <-  dnorm(log(scale[k]), mean = condmean, sd = sqrt(1/condprec), log = TRUE) - log(scale[k])
+        if (length(k) > 1L) {
+          priorA.p <- dmvnorm.precis(x = log(scale.p[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale.p[k]))
+          priorA <- dmvnorm.precis(log(scale[k]), mean = condmean, precis = condprec, logd = TRUE) - sum(log(scale[k]))
+        } else {
+          priorA.p <- dnorm(log(scale.p[k]), mean = condmean, sd = sqrt(1 / condprec), log = TRUE) - log(scale.p[k])
+          priorA <- dnorm(log(scale[k]), mean = condmean, sd = sqrt(1 / condprec), log = TRUE) - log(scale[k])
         }
         acpt <- logdens.p - logdens + priorA.p - priorA + jac
-        if(log(runif(1)) < acpt){
+        if (log(runif(1)) < acpt) {
           scale <- scale.p
         }
       }
@@ -391,103 +421,130 @@ lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.taus
 #' @return a vector of scale parameters
 #' @export
 shape.lgm <- function(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL, shape.tausq = NULL,
-                      mmax, lbound = -0.5, ubound = 0.5, discount = 1, maxstep = 0.1){
+                      mmax, lbound = -0.5, ubound = 0.5, discount = 1, maxstep = 0.1) {
   stopifnot(ubound[1] > lbound[1], length(lbound) == 1, length(ubound) == 1)
 
   D <- length(scale)
   stopifnot(length(ldat) == length(scale))
   # likelihood function
-  llfun <- function(scale, shape, ind = 1:D, ...){
+  llfun <- function(scale, shape, ind = 1:D, ...) {
     scale <- rep(scale, length.out = D)
     shape <- rep(shape, length.out = D)
-    sum(sapply(ind, function(i){mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])}))
+    sum(sapply(ind, function(i) {
+      mev::gpd.ll(par = c(scale[i], shape[i]), dat = ldat[[i]])
+    }))
   }
-  if(length(shape) == 1L){
+  if (length(shape) == 1L) {
     cshape <- TRUE
-  } else{
+  } else {
     stopifnot(length(scale) == length(shape), !is.null(shape.mu), !is.null(shape.precis), !is.null(shape.tausq))
     cshape <- FALSE
   }
 
   # Componentwise maximum at site to compute bounds for simulating scale
-  if(missing(mmax)){
+  if (missing(mmax)) {
     mmax <- as.vector(unlist(lapply(ldat, max)))
   }
 
-for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
-  if(cshape){
-    condmean <- 0; condprec <- 25
-    lbxi <- max(lbound, -min(scale/mmax), shape - maxstep)
-    ubxi <- max(lbxi + 0.25, min(ubound, shape + maxstep))
-  } else{
-    condmean <- c(shape.mu[k] - solve(shape.precis[k,k, drop = FALSE]) %*% shape.precis[k,-k, drop = FALSE] %*% (shape[-k] - shape.mu[-k]))
-    condprec <- shape.precis[k,k, drop = FALSE]/shape.tausq
-    lbxi <- max(lbound, -scale[k]/mmax[k], shape[k] - maxstep)
-    ubxi <- max(lbxi + 0.25, min(ubound, shape[k] + maxstep))
-  }
-  #Copy shape, perform Newton step from current value
-  shape.p <- shape
-  if(cshape){
-    fp <- sum(sapply(1:D, function(j){mev::gpd.score(par = c(scale[j], shape), dat = ldat[[j]])[2]})) +
-      -c(condprec %*% (shape[k] - condmean))
-    fpp <- sum(sapply(1:D, function(j){-mev::gpd.infomat(par = c(scale[j], shape), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
-  } else{
-    #Gradient and Hessian at current value
-    fp <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], shape[j]), dat = ldat[[j]])[2]}) +
-      -c(condprec %*% (shape[k] - condmean))
-    if(length(k) > 1L){
-      fpp <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], shape[j]), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
-    } else{
-      fpp <- -mev::gpd.infomat(par = c(scale[k], shape[k]), dat = ldat[[k]], method = "obs")[2,2] - condprec
+  for (k in sample.int(n = length(shape), size = length(shape), replace = FALSE)) {
+    if (cshape) {
+      condmean <- 0
+      condprec <- 25
+      lbxi <- max(lbound, -min(scale / mmax), shape - maxstep)
+      ubxi <- max(lbxi + 0.25, min(ubound, shape + maxstep))
+    } else {
+      condmean <- c(shape.mu[k] - solve(shape.precis[k, k, drop = FALSE]) %*% shape.precis[k, -k, drop = FALSE] %*% (shape[-k] - shape.mu[-k]))
+      condprec <- shape.precis[k, k, drop = FALSE] / shape.tausq
+      lbxi <- max(lbound, -scale[k] / mmax[k], shape[k] - maxstep)
+      ubxi <- max(lbxi + 0.25, min(ubound, shape[k] + maxstep))
     }
-  }
-  continue <- isTRUE(all(eigen(fpp, only.values = TRUE)$values < 0))
-  if(continue){
-    # Mean and scale for the proposal - with a damping factor to avoid oscillations
-    Sig1 <- -as.matrix(solve(fpp))
-    mu1 <- shape[k] + discount * Sig1 %*% fp
-    shape.p[k] <- TruncatedNormal::mvrandn(l = lbxi, u = ubxi, mu = mu1, Sig = Sig1, n = 1)
-    if(cshape){
-      fp2 <- sum(sapply(1:D, function(j){mev::gpd.score(par = c(scale[j], shape.p), dat = ldat[[j]])[2]})) +
-        -c(condprec %*% (shape.p[k] - condmean))
-      fpp2 <- sum(sapply(1:D, function(j){-mev::gpd.infomat(par = c(scale[j], shape.p), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
-    } else{
-      #Taylor approximation from proposal - obtain mean and variance for Laplace approximation
-      fp2 <- sapply(k, function(j){mev::gpd.score(par = c(scale[j], shape.p[j]), dat = ldat[[j]])[2]}) -
-        c(condprec %*% (shape.p[k] - condmean))
-      if(length(k) > 1L){
-        fpp2 <- diag(sapply(k, function(j){-mev::gpd.infomat(par = c(scale[j], shape.p[j]), dat = ldat[[j]], method = "obs")[2,2]})) - condprec
-      } else{
-        fpp2 <- -mev::gpd.infomat(par = c(scale[k], shape.p[k]), dat = ldat[[k]], method = "obs")[2,2] - condprec
+    # Copy shape, perform Newton step from current value
+    shape.p <- shape
+    if (cshape) {
+      fp <- sum(sapply(1:D, function(j) {
+        mev::gpd.score(par = c(scale[j], shape), dat = ldat[[j]])[2]
+      })) +
+        -c(condprec %*% (shape[k] - condmean))
+      fpp <- sum(sapply(1:D, function(j) {
+        -mev::gpd.infomat(par = c(scale[j], shape), dat = ldat[[j]], method = "obs")[2, 2]
+      })) - condprec
+    } else {
+      # Gradient and Hessian at current value
+      fp <- sapply(k, function(j) {
+        mev::gpd.score(par = c(scale[j], shape[j]), dat = ldat[[j]])[2]
+      }) +
+        -c(condprec %*% (shape[k] - condmean))
+      if (length(k) > 1L) {
+        fpp <- diag(sapply(k, function(j) {
+          -mev::gpd.infomat(par = c(scale[j], shape[j]), dat = ldat[[j]], method = "obs")[2, 2]
+        })) - condprec
+      } else {
+        fpp <- -mev::gpd.infomat(par = c(scale[k], shape[k]), dat = ldat[[k]], method = "obs")[2, 2] - condprec
       }
     }
-    continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
-    if(continue){
-      Sig2 <- -as.matrix(solve(fpp2))
-      mu2 <- shape.p[k] + discount * Sig2 %*% fp2
-      # Jacobian of transformation
+    continue <- isTRUE(all(eigen(fpp, only.values = TRUE)$values < 0))
+    if (continue) {
+      # Mean and scale for the proposal - with a damping factor to avoid oscillations
+      Sig1 <- -as.matrix(solve(fpp))
+      mu1 <- shape[k] + discount * Sig1 %*% fp
+      shape.p[k] <- TruncatedNormal::mvrandn(l = lbxi, u = ubxi, mu = mu1, Sig = Sig1, n = 1)
+      if (cshape) {
+        fp2 <- sum(sapply(1:D, function(j) {
+          mev::gpd.score(par = c(scale[j], shape.p), dat = ldat[[j]])[2]
+        })) +
+          -c(condprec %*% (shape.p[k] - condmean))
+        fpp2 <- sum(sapply(1:D, function(j) {
+          -mev::gpd.infomat(par = c(scale[j], shape.p), dat = ldat[[j]], method = "obs")[2, 2]
+        })) - condprec
+      } else {
+        # Taylor approximation from proposal - obtain mean and variance for Laplace approximation
+        fp2 <- sapply(k, function(j) {
+          mev::gpd.score(par = c(scale[j], shape.p[j]), dat = ldat[[j]])[2]
+        }) -
+          c(condprec %*% (shape.p[k] - condmean))
+        if (length(k) > 1L) {
+          fpp2 <- diag(sapply(k, function(j) {
+            -mev::gpd.infomat(par = c(scale[j], shape.p[j]), dat = ldat[[j]], method = "obs")[2, 2]
+          })) - condprec
+        } else {
+          fpp2 <- -mev::gpd.infomat(par = c(scale[k], shape.p[k]), dat = ldat[[k]], method = "obs")[2, 2] - condprec
+        }
+      }
+      continue <- isTRUE(all(eigen(fpp2, only.values = TRUE)$values < 0))
+      if (continue) {
+        Sig2 <- -as.matrix(solve(fpp2))
+        mu2 <- shape.p[k] + discount * Sig2 %*% fp2
+        # Jacobian of transformation
 
         jac <- mgp::.dmvnorm_arma(x = matrix(shape[k], ncol = length(k)), mean = as.vector(mu2), sigma = as.matrix(Sig2), logd = TRUE) -
           mgp::.dmvnorm_arma(x = matrix(shape.p[k], ncol = length(k)), mean = as.vector(mu1), sigma = as.matrix(Sig1), logd = TRUE) -
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbxi - mu2, u = ubxi - mu2, Sig = as.matrix(Sig2), n = 1000)$prob)) +
           suppressWarnings(log(TruncatedNormal::mvNcdf(l = lbxi - mu1, u = ubxi - mu1, Sig = as.matrix(Sig1), n = 1000)$prob))
 
-      if(cshape){
-        logprior <- dnorm(shape, 0, sd = sqrt(1/condprec), log = TRUE)
-        logprior.p <- dnorm(shape.p, 0, sd = sqrt(1/condprec), log = TRUE)
-      } else{
-        logprior.p <-  mgp::dmvnorm.precis(shape.p[k], mean = condmean, precis = condprec, logd = TRUE)
-        logprior <-  mgp::dmvnorm.precis(shape[k], mean = condmean, precis = condprec, logd = TRUE)
-      }
-      logdens <- llfun(scale = scale, shape = shape, ind = if(cshape){1:D} else{k})
-      logdens.p <- llfun(scale = scale, shape = shape.p, ind = if(cshape){1:D} else{k})
-      acpt <- logdens.p - logdens + logprior.p - logprior + jac
-      if(log(runif(1)) < acpt){
-        shape <- shape.p
+        if (cshape) {
+          logprior <- dnorm(shape, 0, sd = sqrt(1 / condprec), log = TRUE)
+          logprior.p <- dnorm(shape.p, 0, sd = sqrt(1 / condprec), log = TRUE)
+        } else {
+          logprior.p <- mgp::dmvnorm.precis(shape.p[k], mean = condmean, precis = condprec, logd = TRUE)
+          logprior <- mgp::dmvnorm.precis(shape[k], mean = condmean, precis = condprec, logd = TRUE)
+        }
+        logdens <- llfun(scale = scale, shape = shape, ind = if (cshape) {
+          1:D
+        } else {
+          k
+        })
+        logdens.p <- llfun(scale = scale, shape = shape.p, ind = if (cshape) {
+          1:D
+        } else {
+          k
+        })
+        acpt <- logdens.p - logdens + logprior.p - logprior + jac
+        if (log(runif(1)) < acpt) {
+          shape <- shape.p
+        }
       }
     }
   }
-}
   return(shape)
 }
 
@@ -516,74 +573,72 @@ for(k in sample.int(n = length(shape), size = length(shape), replace = FALSE)){
 #' \item{\code{accept}}: logical indicating the proposal has been accepted (\code{TRUE}) or rejected (\code{FALSE}).
 #' }
 #' @export
-mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, transform = FALSE, ...){
+mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = TRUE, transform = FALSE, ...) {
   # overwrite missing values with default setting
-  if(missing(ind)){
+  if (missing(ind)) {
     lc <- length(cur)
     ind <- 1:lc
-  } else{
+  } else {
     lc <- length(ind)
   }
-  if(missing(lb)){
+  if (missing(lb)) {
     lb <- rep(-Inf, length.out = lc)
   }
-  if(missing(ub)){
+  if (missing(ub)) {
     ub <- rep(Inf, length.out = lc)
   }
-  #Transform to different scale if transfo is TRUE, see STAN manual for transformations
-  #This help with skewed variables
-  #Sanity checks for length of arguments - only lengths
+  # Transform to different scale if transfo is TRUE, see STAN manual for transformations
+  # This help with skewed variables
+  # Sanity checks for length of arguments - only lengths
   pcov <- as.matrix(pcov) # handle scalar case
   stopifnot(length(lb) == lc, lc == length(ub), ncol(pcov) == nrow(pcov), ncol(pcov) == length(cur))
 
-  if(transform){
-      propRW <- rprop.rwmh(cur = cur[ind], cov = as.matrix(pcov[ind, ind]), lbound = lb, ubound = ub)
-      prop <- cur
-      prop[ind] <- propRW$prop
-      jac <- propRW$logjac
-  } else{
+  if (transform) {
+    propRW <- rprop.rwmh(cur = cur[ind], cov = as.matrix(pcov[ind, ind]), lbound = lb, ubound = ub)
+    prop <- cur
+    prop[ind] <- propRW$prop
+    jac <- propRW$logjac
+  } else {
     # Copy value
     prop <- cur
-    if(missing(pmu)){
-     pmu <- cur
-     RW <- TRUE
-    } else{
-     stopifnot(length(pmu) == length(cur))
+    if (missing(pmu)) {
+      pmu <- cur
+      RW <- TRUE
+    } else {
+      stopifnot(length(pmu) == length(cur))
     }
 
-    if(!cond){
+    if (!cond) {
       sig <- as.matrix(pcov[ind, ind])
-    # Sample new proposal from truncated Normal centered at current value
-    prop[ind] <- TruncatedNormal::mvrandn(l = lb, mu = pmu[ind], u = ub, Sig = sig, n = 1)
-    if(RW){
-      # mean is at previous iteration, so density term drops out because of symmetry,
-      #but not normalizing constant of truncated dist (since means differ)
-      jac <- suppressWarnings(-log(TruncatedNormal::mvNcdf(l = lb - prop[ind], u = ub - prop[ind], Sig = sig, n = 1000)$prob) +
-                                log(TruncatedNormal::mvNcdf(l = lb - cur[ind], u = ub - cur[ind], Sig = sig, n = 1000)$prob))
-    } else{ #fixed mean, so normalizing constants for truncated components cancels out of the ratio of transition kernel densities
-      jac <- mgp::dmvnorm(x = cur[ind], mean = pmu[ind], sigma = sig, logd = TRUE) -
-        mgp::dmvnorm(x = prop[ind], mean = pmu[ind], sigma = sig, logd = TRUE)
-    }
-    } else{# cond == TRUE
-     prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
-     jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
-       dcondmvtnorm(n = 1L, ind = ind, x = prop, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
-
+      # Sample new proposal from truncated Normal centered at current value
+      prop[ind] <- TruncatedNormal::mvrandn(l = lb, mu = pmu[ind], u = ub, Sig = sig, n = 1)
+      if (RW) {
+        # mean is at previous iteration, so density term drops out because of symmetry,
+        # but not normalizing constant of truncated dist (since means differ)
+        jac <- suppressWarnings(-log(TruncatedNormal::mvNcdf(l = lb - prop[ind], u = ub - prop[ind], Sig = sig, n = 1000)$prob) +
+          log(TruncatedNormal::mvNcdf(l = lb - cur[ind], u = ub - cur[ind], Sig = sig, n = 1000)$prob))
+      } else { # fixed mean, so normalizing constants for truncated components cancels out of the ratio of transition kernel densities
+        jac <- mgp::dmvnorm(x = cur[ind], mean = pmu[ind], sigma = sig, logd = TRUE) -
+          mgp::dmvnorm(x = prop[ind], mean = pmu[ind], sigma = sig, logd = TRUE)
+      }
+    } else { # cond == TRUE
+      prop[ind] <- rcondmvtnorm(n = 1L, ind = ind, x = cur[-ind], lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm")
+      jac <- dcondmvtnorm(n = 1L, ind = ind, x = cur, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE) -
+        dcondmvtnorm(n = 1L, ind = ind, x = prop, lbound = lb, ubound = ub, mu = pmu, sigma = pcov, model = "norm", log = TRUE)
     }
   }
   ll.p <- lik.fun(prop)
-  if(missing(ll)){
+  if (missing(ll)) {
     ll.c <- lik.fun(cur)
-  } else{
+  } else {
     ll.c <- ll
   }
   prior.p <- prior.fun(prop)
   prior.c <- prior.fun(cur)
   acpt <- ll.p - ll.c + prior.p - prior.c + jac
-  if(isTRUE(log(runif(1)) < acpt)){
+  if (isTRUE(log(runif(1)) < acpt)) {
     return(list(ll = ll.p, cur = prop, accept = TRUE))
-  } else{
+  } else {
     return(list(ll = ll.c, cur = cur, accept = FALSE))
   }
 }
-

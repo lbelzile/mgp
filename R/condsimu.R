@@ -18,38 +18,40 @@
 #' @return conditional distribution function for the components \code{ind} at \code{x[ind]}
 #' @export
 pcondmvtnorm <- function(n = 500, ind, x, lbound = rep(-Inf, length(ind)), ubound = rep(Inf, length(ind)),
-                     mu, sigma, df = NULL, model = c("norm", "stud"), log = FALSE){
-  if(length(x) != length(mu)){
+                         mu, sigma, df = NULL, model = c("norm", "stud"), log = FALSE) {
+  if (length(x) != length(mu)) {
     stop("Invalid argument")
   }
   stopifnot(length(ind) > 0)
   x <- as.vector(x)
   mu <- as.vector(mu)
-  schurcomp <- function(sigma, ind){
-    stopifnot(c(length(ind)>0, ncol(sigma)-length(ind)>0))
+  schurcomp <- function(sigma, ind) {
+    stopifnot(c(length(ind) > 0, ncol(sigma) - length(ind) > 0))
     sigma[ind, ind, drop = FALSE] - sigma[ind, -ind, drop = FALSE] %*%
       solve(sigma[-ind, -ind, drop = FALSE]) %*% sigma[-ind, ind, drop = FALSE]
   }
-  if(length(ind) == length(mu)){
+  if (length(ind) == length(mu)) {
     proba <- suppressWarnings(switch(model,
-             norm = log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = pmin(x, ubound) - mu, Sig = sigma)$prob) -
-               log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = sigma)$prob),
-             stud = log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = pmin(x, ubound) - mu, Sig = sigma, df = df)$prob) -
-             log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = sigma, df = df)$prob)))
+      norm = log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = pmin(x, ubound) - mu, Sig = sigma)$prob) -
+        log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = sigma)$prob),
+      stud = log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = pmin(x, ubound) - mu, Sig = sigma, df = df)$prob) -
+        log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = sigma, df = df)$prob)
+    ))
   } else {
-      muC <- c(mu[ind] + sigma[ind, -ind, drop = FALSE] %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x - mu[-ind]))
-      sigC <- c(df + t(x- mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x- mu[-ind]))/
-        (df + length(x)) * schurcomp(sigma, ind)
-      proba <- suppressWarnings(switch(model,
-             norm = log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = pmin(x[ind], ubound) - muC, Sig = schurcomp(sigma, ind))$prob) -
-               log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = schurcomp(sigma, ind))$prob),
-             stud = log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = pmin(x[ind], ubound) - muC, Sig = sigC, df = df + length(x))$prob) -
-               log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = sigC, df = df + length(x))$prob)))
+    muC <- c(mu[ind] + sigma[ind, -ind, drop = FALSE] %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x - mu[-ind]))
+    sigC <- c(df + t(x - mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x - mu[-ind])) /
+      (df + length(x)) * schurcomp(sigma, ind)
+    proba <- suppressWarnings(switch(model,
+      norm = log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = pmin(x[ind], ubound) - muC, Sig = schurcomp(sigma, ind))$prob) -
+        log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = schurcomp(sigma, ind))$prob),
+      stud = log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = pmin(x[ind], ubound) - muC, Sig = sigC, df = df + length(x))$prob) -
+        log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = sigC, df = df + length(x))$prob)
+    ))
   }
-  if(log){
-   proba
-  } else{
-   exp(proba)
+  if (log) {
+    proba
+  } else {
+    exp(proba)
   }
 }
 #' Conditional density of Gaussian or Student subvectors
@@ -72,47 +74,53 @@ pcondmvtnorm <- function(n = 500, ind, x, lbound = rep(-Inf, length(ind)), uboun
 #' @return the conditional (log) density of the vector \code{x[ind]}
 #' @export
 dcondmvtnorm <- function(x, ind, lbound = rep(-Inf, length(ind)), ubound = rep(Inf, length(ind)),
-                         mu, sigma, df = NULL, model = c("norm", "stud"), n = 500, log = FALSE){
-  if(length(x) != length(mu)){
+                         mu, sigma, df = NULL, model = c("norm", "stud"), n = 500, log = FALSE) {
+  if (length(x) != length(mu)) {
     stop("Invalid argument")
   }
-  #stopifnot(length(ind) > 0)
+  # stopifnot(length(ind) > 0)
   x <- as.vector(x)
   mu <- as.vector(mu)
-  schurcomp <- function(sigma, ind){
-    stopifnot(c(length(ind)>0, ncol(sigma)-length(ind)>0))
+  schurcomp <- function(sigma, ind) {
+    stopifnot(c(length(ind) > 0, ncol(sigma) - length(ind) > 0))
     sigma[ind, ind, drop = FALSE] - sigma[ind, -ind, drop = FALSE] %*%
       solve(sigma[-ind, -ind, drop = FALSE]) %*% sigma[-ind, ind, drop = FALSE]
   }
-  if(length(x[ind]) == 0){ #Unconditional distribution function
+  if (length(x[ind]) == 0) { # Unconditional distribution function
     res <- suppressWarnings(switch(model,
-           norm = mgp::dmvnorm(x = x, mean = mu, sigma = as.matrix(sigma), logd = TRUE) -
-             log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = as.matrix(sigma))$prob),
-           stud = dmvstud(x = x, mu = mu, sigma = sigma, df = df, logd = TRUE) -
-             log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = as.matrix(sigma), df = df)$prob)))
-  } else{
+      norm = mgp::dmvnorm(x = x, mean = mu, sigma = as.matrix(sigma), logd = TRUE) -
+        log(TruncatedNormal::mvNcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = as.matrix(sigma))$prob),
+      stud = dmvstud(x = x, mu = mu, sigma = sigma, df = df, logd = TRUE) -
+        log(TruncatedNormal::mvTcdf(n = n, l = lbound - mu, u = ubound - mu, Sig = as.matrix(sigma), df = df)$prob)
+    ))
+  } else {
     muC <- c(mu[ind] + sigma[ind, -ind, drop = FALSE] %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind] - mu[-ind]))
     sigmaC <- as.matrix(schurcomp(sigma, ind))
-    if(length(ind)==1L){
+    if (length(ind) == 1L) {
       res <- switch(model,
-                    norm = mgp::dmvnorm(x = x[-ind], mean = mu[-ind], sigma = solve(sigma[-ind, -ind, drop = FALSE]), logd = TRUE) -
-                      TruncatedNormal::lnNpr(a = (lbound - muC)/sqrt(sigmaC), b = (ubound - muC)/sqrt(sigmaC)),
-                    stud = dmvstud(x = x[-ind], mu = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], df = df, logd = TRUE) -
-                      log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = ubound - muC,
-                                                  Sig = c(df + t(x[-ind]- mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind]- mu[-ind]))/
-                                                    (df + length(x[-ind])) * sigmaC,
-                                                  df = df + length(x[-ind]))$prob))
+        norm = mgp::dmvnorm(x = x[-ind], mean = mu[-ind], sigma = solve(sigma[-ind, -ind, drop = FALSE]), logd = TRUE) -
+          TruncatedNormal::lnNpr(a = (lbound - muC) / sqrt(sigmaC), b = (ubound - muC) / sqrt(sigmaC)),
+        stud = dmvstud(x = x[-ind], mu = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], df = df, logd = TRUE) -
+          log(TruncatedNormal::mvTcdf(
+            n = n, l = lbound - muC, u = ubound - muC,
+            Sig = c(df + t(x[-ind] - mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind] - mu[-ind])) /
+              (df + length(x[-ind])) * sigmaC,
+            df = df + length(x[-ind])
+          )$prob)
+      )
     } else {
       res <- switch(model,
-                    norm = mgp::dmvnorm(x = x[-ind], mean = mu[-ind], sigma = sigma[-ind,-ind, drop = FALSE], logd = TRUE) -
-                      log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = sigmaC)$prob),
-                    stud = dmvstud(x = x[-ind], mu = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], df = df, logd = TRUE) -
-                      log(TruncatedNormal::mvTcdf(n = n, l = lbound - muC, u = ubound - muC,
-                                                  Sig = c(df + t(x[-ind]- mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind]- mu[-ind]))/
-                                                    (df + length(x[-ind])) * sigmaC,
-                                                  df = df + length(x[-ind]))$prob))
-  }
-
+        norm = mgp::dmvnorm(x = x[-ind], mean = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], logd = TRUE) -
+          log(TruncatedNormal::mvNcdf(n = n, l = lbound - muC, u = ubound - muC, Sig = sigmaC)$prob),
+        stud = dmvstud(x = x[-ind], mu = mu[-ind], sigma = sigma[-ind, -ind, drop = FALSE], df = df, logd = TRUE) -
+          log(TruncatedNormal::mvTcdf(
+            n = n, l = lbound - muC, u = ubound - muC,
+            Sig = c(df + t(x[-ind] - mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x[-ind] - mu[-ind])) /
+              (df + length(x[-ind])) * sigmaC,
+            df = df + length(x[-ind])
+          )$prob)
+      )
+    }
   }
   return(ifelse(log, res, exp(res)))
 }
@@ -138,34 +146,36 @@ dcondmvtnorm <- function(x, ind, lbound = rep(-Inf, length(ind)), ubound = rep(I
 #' @return an n by d matrix of conditional simulations
 #' @export
 rcondmvtnorm <- function(n = 1L, ind, x, lbound = rep(-Inf, length(ind)), ubound = rep(Inf, length(ind)),
-                         mu, sigma, df = NULL, model = c("norm", "stud")){
+                         mu, sigma, df = NULL, model = c("norm", "stud")) {
   model <- match.arg(model)
-  if(length(x) + length(ind) != length(mu)){
+  if (length(x) + length(ind) != length(mu)) {
     stop("Invalid argument")
   }
   stopifnot(length(ind) > 0)
   x <- as.vector(x)
   mu <- as.vector(mu)
-  schurcomp <- function(sigma, ind){
-    stopifnot(c(length(ind)>0, ncol(sigma)-length(ind)>0))
-    sigma[ind, ind, drop=FALSE] - sigma[ind,-ind, drop=FALSE] %*% solve(sigma[-ind, -ind, drop=FALSE]) %*% sigma[-ind,ind, drop=FALSE]
+  schurcomp <- function(sigma, ind) {
+    stopifnot(c(length(ind) > 0, ncol(sigma) - length(ind) > 0))
+    sigma[ind, ind, drop = FALSE] - sigma[ind, -ind, drop = FALSE] %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% sigma[-ind, ind, drop = FALSE]
   }
- if(length(x) == 0){ #Unconditional simulation
+  if (length(x) == 0) { # Unconditional simulation
     switch(model,
-           norm = TruncatedNormal::mvrandn(n = n, mu = mu, l = lbound, u = ubound, Sig = sigma),
-           stud = TruncatedNormal::mvrandt(n = n, mu = mu, l = lbound, u = ubound, Sig = sigma, df = df)
+      norm = TruncatedNormal::mvrandn(n = n, mu = mu, l = lbound, u = ubound, Sig = sigma),
+      stud = TruncatedNormal::mvrandt(n = n, mu = mu, l = lbound, u = ubound, Sig = sigma, df = df)
     )
   } else {
-    muC <- c(mu[ind] + sigma[ind, -ind, drop=FALSE] %*% solve(sigma[-ind, -ind, drop=FALSE]) %*% (x - mu[-ind]))
+    muC <- c(mu[ind] + sigma[ind, -ind, drop = FALSE] %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x - mu[-ind]))
     switch(model,
-           norm = TruncatedNormal::mvrandn(n = n, mu = muC, l = lbound, u = ubound,
-                                          Sig = schurcomp(sigma, ind)),
-           stud = TruncatedNormal::mvrandt(n = n, l = lbound, mu = muC, u = ubound,
-                                   Sig = c(df + t(x- mu[-ind]) %*% solve(sigma[-ind, -ind, drop=FALSE]) %*% (x- mu[-ind]))/
-                                     (df + length(x)) * schurcomp(sigma, ind),
-                                   df = df + length(x))
+      norm = TruncatedNormal::mvrandn(
+        n = n, mu = muC, l = lbound, u = ubound,
+        Sig = schurcomp(sigma, ind)
+      ),
+      stud = TruncatedNormal::mvrandt(
+        n = n, l = lbound, mu = muC, u = ubound,
+        Sig = c(df + t(x - mu[-ind]) %*% solve(sigma[-ind, -ind, drop = FALSE]) %*% (x - mu[-ind])) /
+          (df + length(x)) * schurcomp(sigma, ind),
+        df = df + length(x)
+      )
     )
-
   }
 }
-

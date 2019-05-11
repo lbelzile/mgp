@@ -9,56 +9,57 @@
 #' @param map logical; should data be returned on the unit Pareto scale? Default to \code{FALSE}
 #' @return a matrix of observations with imputed values in place of censored components.
 #' @export
-impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau = 1, riskr = c("max", "sum"), par, map = FALSE, ...){
+impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau = 1, riskr = c("max", "sum"), par, map = FALSE, ...) {
   ellips <- list(...)
-  model <- "br" #only model currently supported
+  model <- "br" # only model currently supported
   riskr <- match.arg(riskr)
   # Set dimensions and replicate marginal GP parameters
-  N <- nrow(dat); D <- ncol(dat)
+  N <- nrow(dat)
+  D <- ncol(dat)
   shape <- rep(shape, length.out = D)
   scale <- rep(scale, length.out = D)
-  loc  <- rep(loc, length.out = D)
+  loc <- rep(loc, length.out = D)
   lambdau <- rep(lambdau, length.out = D)
-  if(model == "br"){
-  Lambda <- par$Lambda
-   if(is.null(Lambda)){
-     if(!is.null(ellips$Lambda)){
-       Lambda <- ellips$Lambda
-       } else{
+  if (model == "br") {
+    Lambda <- par$Lambda
+    if (is.null(Lambda)) {
+      if (!is.null(ellips$Lambda)) {
+        Lambda <- ellips$Lambda
+      } else {
         stop("User must provide dependence matrix `Lambda`")
       }
     }
   }
-  #Copy the matrix and transform data to unit Pareto scale (tdat)
+  # Copy the matrix and transform data to unit Pareto scale (tdat)
   tdat <- dat
   colmax <- apply(dat, 2, max)
-  if(isTRUE(any(colmax > ifelse(shape < 0, loc -scale/shape, Inf)))){
+  if (isTRUE(any(colmax > ifelse(shape < 0, loc - scale / shape, Inf)))) {
     stop("Some exceedances are above the upper bound of the distribution.")
   }
-  #Marginal transformation from GP to unit Pareto
-  for(j in 1:D){
-    tdat[,j] <-  pmax(0,(1+shape[j]/scale[j]*(dat[,j] - loc[j])))^(1/shape[j])/lambdau[j]
+  # Marginal transformation from GP to unit Pareto
+  for (j in 1:D) {
+    tdat[, j] <- pmax(0, (1 + shape[j] / scale[j] * (dat[, j] - loc[j])))^(1 / shape[j]) / lambdau[j]
   }
-  #Also map the thresholds
-  mt <- pmax(0,(1+shape/scale*(mthresh-loc)))^(1/shape)/lambdau
+  # Also map the thresholds
+  mt <- pmax(0, (1 + shape / scale * (mthresh - loc)))^(1 / shape) / lambdau
   # Marginal threshold must be such that any component is resolvable
-  if(riskr == "sum"){
-  stopifnot(isTRUE(all(mthresh <= thresh/D)))
-  } else if(riskr == "max"){
+  if (riskr == "sum") {
+    stopifnot(isTRUE(all(mthresh <= thresh / D)))
+  } else if (riskr == "max") {
     stopifnot(isTRUE(all(mthresh <= thresh)))
   }
-  if(is.null(ellips$censored)){
+  if (is.null(ellips$censored)) {
     censored <- t(t(dat) < mthresh)
-  } else{
-   censored <- ellips$censored
+  } else {
+    censored <- ellips$censored
   }
-  if(is.null(ellips$numAbovePerRow)){
+  if (is.null(ellips$numAbovePerRow)) {
     numAbovePerRow <- D - rowSums(censored)
-  } else{
+  } else {
     numAbovePerRow <- ellips$numAbovePerRow
   }
 
-  #if this is true, only one conditional simulation is needed
+  # if this is true, only one conditional simulation is needed
   stopifnot(dim(tdat) == dim(censored), length(numAbovePerRow) == N)
   # if(model == "xstud"){
   #   for(i in 1:N){
@@ -84,66 +85,75 @@ impute <- function(dat, thresh, mthresh, loc = 1, scale = 1, shape = 1, lambdau 
   #   }
   # } else if (model == "br"){ #parametrization with lambda
   nsimu <- switch(riskr, max = 1, sum = 10)
-    for(i in 1:N){
-      if(numAbovePerRow[i] < D){
-        be <- which(censored[i,])
-        ab <- which(!censored[i,])
-        if(length(ab) < 1){ stop("Non censored component in input")}
-        #remove first non-censored, shift indices by 1 - because inference is conditional on one site, so this is a degenerate
-        #log-Gaussian process (its value is almost surely 1 at the projection site
-        be2 <- be - I(be > ab[1])
-        ab2 <- ab[-1] - I(ab[-1] > ab[1])
-        SigmaD <- outer(2 * Lambda[ab[1], - ab[1]], 2 * Lambda[ab[1], - ab[1]], "+") - 2 * Lambda[-ab[1], - ab[1]]
-        muD <- - 2 * Lambda[ab[1], - ab[1]]
-        thD <- log(mt[be]) - log(tdat[i, ab[1]])
-        inriskregion <- FALSE
-        while(!inriskregion){
-          if(length(ab) == 1){
-            if(length(be) > 1 || riskr == "max"){
-              prop <- t(as.matrix(TruncatedNormal::mvrandn(n = nsimu,
-                                                         l = rep(-Inf, length(be2)),
-                                                         u = thD, mu = muD, Sig = SigmaD)))
-            } else { #length be == 1, so D=2 and we can exactly get lower bound
-              prop <- t(as.matrix(TruncatedNormal::mvrandn(n = 1, u = thD, mu = muD,
-                                                         Sig = SigmaD, l =  - log(tdat[i, ab[1]]) +
-                        log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be]) -loc[be]))^(1/shape[be])/lambdau[be]))))
-
-            }
-          } else {# length(ab) > 1
-            if(length(be) > 1 || riskr == "max"){
-              prop <- t(as.matrix(rcondmvtnorm(n = switch(riskr, max = 1, sum = 5*length(be2)),
-                                               ind = be2, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
-                                               ubound = thD, mu = muD, sigma = SigmaD, model = "norm")))
-            } else {
-              lbbe <- - log(tdat[i, ab[1]]) +
-                log((1+shape[be]/scale[be]*(thresh - sum(dat[i,-be] - loc[be])))^(1/shape[be])/lambdau[be])
-              if(is.nan(lbbe)){
-                lbbe <- -Inf
-              }
-              prop <- t(as.matrix(rcondmvtnorm(n = 1, ind = be2, model = "norm",
-                         ubound = thD, mu = muD, sigma = SigmaD, x = log(tdat[i, ab2])-log(tdat[i, ab[1]]),
-                         lbound = lbbe)))
-            }
+  for (i in 1:N) {
+    if (numAbovePerRow[i] < D) {
+      be <- which(censored[i, ])
+      ab <- which(!censored[i, ])
+      if (length(ab) < 1) {
+        stop("Non censored component in input")
+      }
+      # remove first non-censored, shift indices by 1 - because inference is conditional on one site, so this is a degenerate
+      # log-Gaussian process (its value is almost surely 1 at the projection site
+      be2 <- be - I(be > ab[1])
+      ab2 <- ab[-1] - I(ab[-1] > ab[1])
+      SigmaD <- outer(2 * Lambda[ab[1], -ab[1]], 2 * Lambda[ab[1], -ab[1]], "+") - 2 * Lambda[-ab[1], -ab[1]]
+      muD <- -2 * Lambda[ab[1], -ab[1]]
+      thD <- log(mt[be]) - log(tdat[i, ab[1]])
+      inriskregion <- FALSE
+      while (!inriskregion) {
+        if (length(ab) == 1) {
+          if (length(be) > 1 || riskr == "max") {
+            prop <- t(as.matrix(TruncatedNormal::mvrandn(
+              n = nsimu,
+              l = rep(-Inf, length(be2)),
+              u = thD, mu = muD, Sig = SigmaD
+            )))
+          } else { # length be == 1, so D=2 and we can exactly get lower bound
+            prop <- t(as.matrix(TruncatedNormal::mvrandn(
+              n = 1, u = thD, mu = muD,
+              Sig = SigmaD, l = -log(tdat[i, ab[1]]) +
+                log((1 + shape[be] / scale[be] * (thresh - sum(dat[i, -be]) - loc[be]))^(1 / shape[be]) / lambdau[be])
+            )))
           }
-          for(k in 1:nrow(prop)){
-            tdat[i,censored[i,]] <- exp(log(tdat[i, ab[1]]) + prop[k,])
-            if(riskr == "max"){
-              inriskregion <- TRUE
-            } else if(riskr == "sum"){
-            inriskregion <- isTRUE(sum(scale*(tdat[i,]^shape-1)/shape + loc) > thresh)
+        } else { # length(ab) > 1
+          if (length(be) > 1 || riskr == "max") {
+            prop <- t(as.matrix(rcondmvtnorm(
+              n = switch(riskr, max = 1, sum = 5 * length(be2)),
+              ind = be2, x = log(tdat[i, ab2]) - log(tdat[i, ab[1]]),
+              ubound = thD, mu = muD, sigma = SigmaD, model = "norm"
+            )))
+          } else {
+            lbbe <- -log(tdat[i, ab[1]]) +
+              log((1 + shape[be] / scale[be] * (thresh - sum(dat[i, -be] - loc[be])))^(1 / shape[be]) / lambdau[be])
+            if (is.nan(lbbe)) {
+              lbbe <- -Inf
             }
+            prop <- t(as.matrix(rcondmvtnorm(
+              n = 1, ind = be2, model = "norm",
+              ubound = thD, mu = muD, sigma = SigmaD, x = log(tdat[i, ab2]) - log(tdat[i, ab[1]]),
+              lbound = lbbe
+            )))
+          }
+        }
+        for (k in 1:nrow(prop)) {
+          tdat[i, censored[i, ]] <- exp(log(tdat[i, ab[1]]) + prop[k, ])
+          if (riskr == "max") {
+            inriskregion <- TRUE
+          } else if (riskr == "sum") {
+            inriskregion <- isTRUE(sum(scale * (tdat[i, ]^shape - 1) / shape + loc) > thresh)
           }
         }
       }
     }
-  if(!map){
-    #Back transform the observations
-    for(j in 1:D){
-      dat[censored[,j],j] <-  (tdat[censored[,j],j]^shape[j]-1)/shape[j]*scale[j] + loc[j] #map from Pareto to GPD
+  }
+  if (!map) {
+    # Back transform the observations
+    for (j in 1:D) {
+      dat[censored[, j], j] <- (tdat[censored[, j], j]^shape[j] - 1) / shape[j] * scale[j] + loc[j] # map from Pareto to GPD
     }
     return(dat)
-  } else{
-    #Return all observations on unit Pareto scale
+  } else {
+    # Return all observations on unit Pareto scale
     return(tdat)
   }
 }

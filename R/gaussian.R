@@ -5,13 +5,13 @@
 #' @param precis precision matrix
 #' @return sample of size \code{n} from the multivariate Gaussian distribution
 #' @export
-rmvnormprec <- function(n, mu = rep(0, ncol(precis)), precis){
+rmvnormprec <- function(n, mu = rep(0, ncol(precis)), precis) {
   stopifnot(ncol(precis) == nrow(precis), nrow(precis) == length(mu))
-  if(length(mu) > 1){
+  if (length(mu) > 1) {
     t(mu + backsolve(chol(precis), x = diag(nrow(precis))) %*%
-        matrix(rnorm(n*ncol(precis)), ncol = n, nrow = ncol(precis)))
+      matrix(rnorm(n * ncol(precis)), ncol = n, nrow = ncol(precis)))
   } else {
-    mu + rnorm(n)/sqrt(precis)
+    mu + rnorm(n) / sqrt(precis)
   }
 }
 
@@ -25,19 +25,18 @@ rmvnormprec <- function(n, mu = rep(0, ncol(precis)), precis){
 #' @param logd logical; whether log-density should be returned (default to \code{FALSE})
 #' @return density or log-density of the \code{nrow(x)} sample
 #' @export
-dmvnorm <- function(x, mean, sigma, logd = FALSE){
-  if(any(missing(x), missing(mean), missing(sigma))){
+dmvnorm <- function(x, mean, sigma, logd = FALSE) {
+  if (any(missing(x), missing(mean), missing(sigma))) {
     stop("Arguments missing in function call to `dmvnorm`")
   }
   stopifnot(length(mean) == ncol(sigma), nrow(sigma) == ncol(sigma), is.logical(logd))
-  if(is.vector(x)){
-   stopifnot(length(x) == length(mean))
-   x <- matrix(x, nrow = 1, ncol = length(x))
-  } else{
-   stopifnot(ncol(x) == length(mean))
+  if (is.vector(x)) {
+    stopifnot(length(x) == length(mean))
+    x <- matrix(x, nrow = 1, ncol = length(x))
+  } else {
+    stopifnot(ncol(x) == length(mean))
   }
   mgp::.dmvnorm_arma(x, as.vector(mean), as.matrix(sigma), logd = as.logical(logd))
-
 }
 
 #' Multivariate normal density function parametrized in terms of a precision matrix
@@ -49,20 +48,20 @@ dmvnorm <- function(x, mean, sigma, logd = FALSE){
 #' @return density or log-density of the \code{nrow(x)} sample
 #' @export
 dmvnorm.precis <- function(x, mean, precis, logd = FALSE) {
-  if(is.vector(x)){
+  if (is.vector(x)) {
     x <- t(as.matrix(x))
   }
-  if(missing(mean)){
+  if (missing(mean)) {
     mean <- rep(0, ncol(x))
   }
-  if(missing(precis)){
+  if (missing(precis)) {
     precis <- diag(0, ncol(x))
   }
   rooti <- t(chol(precis))
   quads <- colSums((crossprod(rooti, (t(x) - mean)))^2)
-  if(logd){
+  if (logd) {
     return(-(ncol(x) / 2) * log(2 * pi) + sum(log(diag(rooti))) - .5 * quads)
-  } else{
+  } else {
     return(exp(-(ncol(x) / 2) * log(2 * pi) + sum(log(diag(rooti))) - .5 * quads))
   }
 }
@@ -74,10 +73,10 @@ dmvnorm.precis <- function(x, mean, precis, logd = FALSE) {
 #' @param scale rate parameter, strictly positive
 #' @param log logical; should the log-density be returned?
 #' @export
-dinvgamma <- function(x, shape, scale, log = TRUE){
+dinvgamma <- function(x, shape, scale, log = TRUE) {
   stopifnot(any(c(shape > 0, scale > 0)))
-  log.density <- shape * log(scale) - lgamma(shape) - (shape + 1) * log(x) - (scale/x)
-  if(log){
+  log.density <- shape * log(scale) - lgamma(shape) - (shape + 1) * log(x) - (scale / x)
+  if (log) {
     return(log.density)
   } else {
     return(exp(log.density))
@@ -96,28 +95,27 @@ dinvgamma <- function(x, shape, scale, log = TRUE){
 #' @param logd logical; should log-density be returned? default to \code{TRUE}
 #' @keywords internal
 #' @export
-dmvstud <- function(x, mu = rep(0, p), sigma = diag(p), df = 1, logd = TRUE)  {
-  if (is.vector(x)){
+dmvstud <- function(x, mu = rep(0, p), sigma = diag(p), df = 1, logd = TRUE) {
+  if (is.vector(x)) {
     x <- matrix(x, ncol = length(x))
   }
   p <- ncol(x)
   stopifnot(length(mu) == ncol(x), df > 0)
-  if (is.infinite(df)){
+  if (is.infinite(df)) {
     return(mgp::dmvnorm(x, mean = mu, sigma = sigma, logd = log))
   }
   if (!missing(sigma)) {
-    if (p != ncol(sigma))
+    if (p != ncol(sigma)) {
       stop("x and sigma have non-conforming size")
+    }
   }
   dec <- try(chol(sigma))
-  if(is.character(sigma)){
+  if (is.character(sigma)) {
     stop("Could not compute the Cholesky decomposition of the covariance matrix `sigma`")
   }
   R.x_m <- backsolve(dec, t(x) - mu, transpose = TRUE)
   rss <- colSums(R.x_m^2)
-  logretval <- lgamma((p + df)/2) - (lgamma(df/2) + sum(log(diag(dec))) +
-                                       p/2 * log(pi * df)) - 0.5 * (df + p) * log1p(rss/df)
+  logretval <- lgamma((p + df) / 2) - (lgamma(df / 2) + sum(log(diag(dec))) +
+    p / 2 * log(pi * df)) - 0.5 * (df + p) * log1p(rss / df)
   return(ifelse(logd, sum(logretval), exp(sum(logretval))))
 }
-
-
