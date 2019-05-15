@@ -48,6 +48,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   model <- match.arg(model)
   likt <- match.arg(likt)
   ellips <- list(...)
+  thin <- as.integer(thin)
   B <- numiter * thin + burnin
 
   if (isTRUE(is.finite(saveinterm))) {
@@ -381,7 +382,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   ########################################################################
   ####################          LOOP         #############################
   ########################################################################
-  thin <- as.integer(thin)
+
   for (b in 1:B) {
     attempt <- attempt + 1L
 
@@ -450,7 +451,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     if (attributes(lscale.hyp.rho.c)$accept) { # only update is move is accepted
       lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
     }
-
     ####          UPDATE MARGINAL SHAPE PARAMETER           ####
 
     if (model %in% c("xstud", "br")) {
@@ -503,25 +503,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
       }
     }
-    ####           UPDATE DEGREES OF FREEDOM                ####
 
-    # if(model == "xstud"){
-    #   df.loglikfn <- function(df){
-    #     par <- list(Sigma = par.c$Sigma, df = df)
-    #     ll = loglikfn(scale = scale.c, shape = shape.c, par = par)
-    #     attributes(ll)$par <- par
-    #     ll
-    #   }
-    #   df.lpriorfn <- function(df){dgamma(df-1, shape = 1.5, scale = 5, log = TRUE)}
-    #   update <- mh.fun(cur = df.c, lb = df.lb, ind = 1, lik.fun = df.loglikfn, transfo = TRUE,
-    #                       ll = loglik.c, pcov = df.pcov, cond = FALSE, prior.fun = df.lpriorfn)
-    #   if(update$accept){
-    #     accept[df.i] <- accept[df.i] + 1L
-    #     par.c <-  attributes(update$ll)$par
-    #     loglik.c <- update$ll
-    #     df.c <- update$cur
-    #   }
-    # }
     ####           UPDATE DEPENDENCE PARAMETERS             ####
     # adding prior contribution for the anisotropy parameters
 
@@ -669,13 +651,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, dep.i])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
       }
       if (b > 200 && b < burnin && (b %% 200) == 0) {
-        # if(model == "xstud"){
-        #   df.sdp <- sqrt(df.pcov)
-        #   ada <- adaptive(attempts = attempt[df.i], acceptance = accept[df.i], sd.p = df.sdp)
-        #   df.pcov <- as.matrix(ada$sd^2)
-        #   accept[df.i] <- ada$acc
-        #   attempt[df.i] <- ada$att
-        # }
         if (geoaniso) {
           mb <- max(b - 1000, 200)
           aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-5 * diag(2) - aniso.pcov)

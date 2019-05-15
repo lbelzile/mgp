@@ -83,7 +83,7 @@ updt.range <- function(tau, alpha, lambda, di, a, b, lb = 1e-2, discount = 0.2, 
           l = pmax(lb, lambda.new - maxstep) - b.new,
           u = lambda.new + maxstep - b.new, Sig = 1 / d.new, n = 1
         )$prob))
-      mh <- L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr
+      mh <- as.vector(L.new - L.curr + prior.new - prior.curr + prop.new - prop.curr)
       if (isTRUE(log(runif(1)) < mh)) {
         lambda <- lambda.new
         attributes(lambda) <- list(accept = TRUE)
@@ -635,7 +635,7 @@ mh.fun <- function(cur, lb, ub, prior.fun, lik.fun, ll, ind, pmu, pcov, cond = T
   }
   prior.p <- prior.fun(prop)
   prior.c <- prior.fun(cur)
-  acpt <- ll.p - ll.c + prior.p - prior.c + jac
+  acpt <- as.vector(ll.p - ll.c + prior.p - prior.c + jac)
   if (isTRUE(log(runif(1)) < acpt)) {
     return(list(ll = ll.p, cur = prop, accept = TRUE))
   } else {
