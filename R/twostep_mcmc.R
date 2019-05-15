@@ -267,7 +267,6 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   ####################          LOOP         #############################
   ########################################################################
   thin <- as.integer(thin)
-  browser()
   for (b in 1:B) {
     attempt <- attempt + 1L
 

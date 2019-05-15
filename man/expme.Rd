@@ -27,16 +27,18 @@ The list \code{par} must contain different arguments depending on the model. For
 }
 \examples{
 \dontrun{
-#Extremal Student
-Sigma <- stats::rWishart(n = 1, df = 20, Sigma = diag(10))[,,1]
+# Extremal Student
+Sigma <- stats::rWishart(n = 1, df = 20, Sigma = diag(10))[, , 1]
 expme(z = rep(1, ncol(Sigma)), par = list(Sigma = cov2cor(Sigma), df = 3), model = "xstud")
-#Brown-Resnick model
+# Brown-Resnick model
 D <- 5L
 loc <- cbind(runif(D), runif(D))
 di <- as.matrix(dist(rbind(c(0, ncol(loc)), loc)))
-semivario <- function(d, alpha = 1.5, lambda = 1){(d/lambda)^alpha}
+semivario <- function(d, alpha = 1.5, lambda = 1) {
+  (d / lambda)^alpha
+}
 Vmat <- semivario(di)
-Lambda <- Vmat[-1,-1]/2
+Lambda <- Vmat[-1, -1] / 2
 expme(z = rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")
 Sigma <- outer(Vmat[-1, 1], Vmat[1, -1], "+") - Vmat[-1, -1]
 expme(z = rep(1, ncol(Lambda)), par = list(Lambda = Lambda), model = "br", method = "mvPot")

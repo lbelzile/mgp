@@ -462,7 +462,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         loglikfn(scale = scale.c, shape = shape, par = par.c)
       }
       update <- mh.fun(
-        cur = shape.c, lb = shape.lb, ind = 1, lik.fun = shape.loglikfn, prior.fun = shape.lpriorfn,
+        cur = shape.c, lb = shape.lb, ub = 0.5, ind = 1, lik.fun = shape.loglikfn, prior.fun = shape.lpriorfn,
         ll = loglik.c, pcov = as.matrix(marg.pcov[D + 1, D + 1]), cond = FALSE
       )
       # Increase acceptance count, update log
