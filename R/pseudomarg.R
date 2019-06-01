@@ -85,7 +85,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   loc <- as.matrix(coord[, 1:2])
   Xm <- cbind(1, scale(as.matrix(coord)))
   di <- distg(loc = coord[, 1:2], scale = 1, rho = 0)
-
+  medist <- median(di[upper.tri(di)])
   ellips <- list(...)
   # Precision and generating vectors for Monte Carlo routines
   genvec1 <- ellips$genvec1
@@ -229,8 +229,9 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     dep.npcov[ndep + 1, ndep + 1] <- df.pcov
     dep.pcov <- dep.npcov
     dep.lb <- c(dep.lb, df.lb)
-    dep.ub <- c(dep.ub, Inf)
+    dep.ub <- c(dep.ub, 500) #TODO changed to 500
     dep.i <- c(dep.i, df.i)
+    dep.lpriorfn <- function(x){dep.lpriorfn(x[-length(x)]) + dt(x = x[length(x)]-1, df = 1, log = TRUE) + log(2)}
     ndep <- ndep + 1L
   } else {
     df.pcov <- NULL
@@ -333,6 +334,8 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       aniso.pcov <- NULL
     }
     ntot <- ellips$ntot
+    #Scale distance matrix for more meaningful prior specification
+    lscale.hyp.rho.c  <- lscale.hyp.rho.c /median(di[upper.tri(di)])
 
     par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
     if (!censor) {
@@ -446,7 +449,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     # Laplace approximation for the range parameter
     lscale.hyp.rho.c <- updt.range(
       tau = lscale.c - c(Xm %*% lscale.hyp.mean.c), alpha = 1 / lscale.hyp.tausq.c,
-      lambda = lscale.hyp.rho.c, di = di, a = 2, b = 2, discount = 0.4, lb = 1e-2, maxstep = 2
+      lambda = lscale.hyp.rho.c, di = di, a = 2, b = 2/medist, discount = 0.4, lb = 1e-2, maxstep = medist
     )
     if (attributes(lscale.hyp.rho.c)$accept) { # only update is move is accepted
       lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
@@ -497,7 +500,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
 
       shape.hyp.rho.c <- updt.range(
         tau = shape.c - c(Xm %*% shape.hyp.mean.c), alpha = 1 / shape.hyp.tausq.c,
-        lambda = shape.hyp.rho.c, di = di, a = 2, b = 2, discount = 0.5, lb = 1e-2, maxstep = 1
+        lambda = shape.hyp.rho.c, di = di, a = 2, b = 2/medist, discount = 0.8, lb = 1e-2, maxstep = medist
       )
       if (attributes(shape.hyp.rho.c)$accept) { # only update is move is accepted
         shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))

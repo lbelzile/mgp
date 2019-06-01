@@ -402,10 +402,10 @@ lscale.lgm <- function(scale, shape, ldat, lscale.mu, lscale.precis, lscale.taus
 }
 
 
-#' Update for latent Gaussian model for the scale parameter of a generalized Pareto
+#' Update for latent Gaussian model for the shape parameter of a generalized Pareto
 #'
-#' The scale has a log-Gaussian prior with variance \code{lscale.tausq} and precision (the inverse of the correlation matrix)
-#' given by \code{lscale.precis}.
+#' The shape has aGaussian prior with variance \code{shape.tausq} and precision (the inverse of the correlation matrix)
+#' given by \code{shape.precis}.
 #'
 #' @param scale vector of scale parameters for the generalized Pareto distribution
 #' @param shape vector of shape parameters for the generalized Pareto distribution

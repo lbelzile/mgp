@@ -2,7 +2,7 @@
 % Please edit documentation in R/mcmc.R
 \name{shape.lgm}
 \alias{shape.lgm}
-\title{Update for latent Gaussian model for the scale parameter of a generalized Pareto}
+\title{Update for latent Gaussian model for the shape parameter of a generalized Pareto}
 \usage{
 shape.lgm(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL,
   shape.tausq = NULL, mmax, lbound = -0.5, ubound = 0.5,
@@ -35,6 +35,6 @@ shape.lgm(scale, shape, ldat, shape.mu = NULL, shape.precis = NULL,
 a vector of scale parameters
 }
 \description{
-The scale has a log-Gaussian prior with variance \code{lscale.tausq} and precision (the inverse of the correlation matrix)
-given by \code{lscale.precis}.
+The shape has aGaussian prior with variance \code{shape.tausq} and precision (the inverse of the correlation matrix)
+given by \code{shape.precis}.
 }

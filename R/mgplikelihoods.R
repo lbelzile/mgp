@@ -119,7 +119,7 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1) {
 #'
 #' Likelihood for the Brown--Resnick, extremal Student or logistic vectors over region determined by
 #' \deqn{\{y \in F: \max_{j=1}^D \sigma_j \frac{y^\xi_j-1}{\xi_j}+\mu_j  > u\};}
-#' where \eqn{\mu} is \code{loc}, \eqn{\sigma} is \code{scale} and \eqn{xi} is \code{shape}.
+#' where \eqn{\mu} is \code{loc}, \eqn{\sigma} is \code{scale} and \eqn{\xi} is \code{shape}.
 #' @param dat matrix of observations
 #' @param thresh functional threshold for the maximum
 #' @param loc vector of location parameter for the marginal generalized Pareto distribution
