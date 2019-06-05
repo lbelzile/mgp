@@ -61,7 +61,7 @@ pcondmvtnorm <- function(n = 500, ind, x, lbound = rep(-Inf, length(ind)), uboun
 #' The location vector \code{mu} and the scale matrix \code{sigma} are those of the \eqn{d+p} vector.
 #' The routine relies on the CDF approximation based on minimax exponential tilting implemented in the \code{TruncatedNormal} package.
 #'
-#' @param ind a \code{d} vector of indices to with integer entries in \eqn{\{1, \ldots, d+p\}} for which to compute the conditional density
+#' @param ind a \code{d} vector of integer indices in \eqn{\{1, \ldots, d+p\}} for which to compute the conditional density
 #' @param x a \code{p} vector with the values of process at the remaining coordinates
 #' @param lbound \code{d} vector of lower bounds
 #' @param ubound \code{d} vector of upper bounds for truncated
@@ -145,11 +145,17 @@ dcondmvtnorm <- function(x, ind, lbound = rep(-Inf, length(ind)), ubound = rep(I
 #' @param n sample size for the random vector; default to 1.
 #' @return an n by d matrix of conditional simulations
 #' @export
-rcondmvtnorm <- function(n = 1L, ind, x, lbound = rep(-Inf, length(ind)), ubound = rep(Inf, length(ind)),
+rcondmvtnorm <- function(n = 1L, ind, x, lbound, ubound,
                          mu, sigma, df = NULL, model = c("norm", "stud")) {
   model <- match.arg(model)
   if (length(x) + length(ind) != length(mu)) {
     stop("Invalid argument")
+  }
+  if(missing(lbound)){
+    lbound <- rep(-Inf, length.out = length(ind))
+  }
+  if(missing(ubound)){
+    ubound <- rep(Inf, length.out = length(ind))
   }
   stopifnot(length(ind) > 0)
   x <- as.vector(x)

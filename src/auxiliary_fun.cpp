@@ -54,6 +54,7 @@ arma::vec dmvnorm_arma(arma::mat x,
 // [[Rcpp::export]]
 arma::mat distg(arma::mat loc, NumericVector scale, NumericVector rho){
   int d = loc.n_rows;
+  int m = loc.n_cols;
   arma::mat aniso(2, 2);
   if(loc.n_cols > 2){
     stop("Invalid location matrix; only geometric anisotropy for bivariate is supported");
@@ -75,8 +76,8 @@ arma::mat distg(arma::mat loc, NumericVector scale, NumericVector rho){
       distmat.zeros();
       arma::vec dist_ij(loc.n_cols);
       for(int i=0; i<d-1; i++){
-        for(int j=i+1; j<d; j++){
-          for(int k=0; k<loc.n_cols;k++){
+        for(int j=i+1; j < d; j++){
+          for(int k=0; k < m; k++){
             dist_ij(k) = loc(i,k) - loc(j,k);
           }
           distmat(i,j) = arma::norm(aniso * dist_ij);

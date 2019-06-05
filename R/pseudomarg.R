@@ -220,6 +220,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       df.c <- 2
     }
     df.lb <- 1 + 1e-5
+    df.ub <- 100
     npar <- npar + 1L
     df.i <- npar
     # Port to dep. to perform updates together with dep
@@ -229,9 +230,9 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     dep.npcov[ndep + 1, ndep + 1] <- df.pcov
     dep.pcov <- dep.npcov
     dep.lb <- c(dep.lb, df.lb)
-    dep.ub <- c(dep.ub, 500) #TODO changed to 500
+    dep.ub <- c(dep.ub, df.ub)
     dep.i <- c(dep.i, df.i)
-    dep.lpriorfn <- function(x){dep.lpriorfn(x[-length(x)]) + dt(x = x[length(x)]-1, df = 1, log = TRUE) + log(2)}
+    dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) + dgamma(x = x[length(x)]-1, shape = 3, scale = 3, log = TRUE)}
     ndep <- ndep + 1L
   } else {
     df.pcov <- NULL
@@ -459,7 +460,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     if (model %in% c("xstud", "br")) {
       shape.lb <- max(-0.49, -min(scale.c / mmax))
       shape.lpriorfn <- function(shape) {
-        dnorm(x = shape, mean = 0, sd = 0.2, log = TRUE)
+        dbeta(x = shape + 0.5, shape1 = 60, shape2 = 40, log = TRUE)
       }
       shape.loglikfn <- function(shape) {
         loglikfn(scale = scale.c, shape = shape, par = par.c)
@@ -678,8 +679,15 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
   save(res, time, dat, Xm, lpost, dep.pcov, marg.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
+  if(keepburnin){
   invisible(return(list(
     res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
     dep.pcov = dep.pcov, marg.pcov = marg.pcov, aniso.pcov = aniso.pcov, model = model
   )))
+  } else{
+    invisible(return(list(
+      res = res[-(1:burnin),], time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost[-(1:burnin)],
+      dep.pcov = dep.pcov, marg.pcov = marg.pcov, aniso.pcov = aniso.pcov, model = model
+    )))
+  }
 }

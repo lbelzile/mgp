@@ -31,14 +31,14 @@ new value of \code{lambda}
 }
 \description{
 This function, adapted from \code{\link[spatial.gev.bma]{gev.update.lambda}},
-uses the Laplace approximation to build a proposal for the range parameter of an
+uses a Laplace approximation to build a proposal for the range parameter of an
 exponential covariance model with precision \eqn{\alpha} and range \eqn{\lambda}.
 }
 \details{
 The difference with the \code{spatial.gev.bma} package is that proposals
-are truncated Gaussian, so may be accepted even if the Newton discount is centered at negative values.
+are truncated Gaussian,  so may be accepted even if the mean of the Newton step proposal is negative.
 If the current \eqn{\lambda} value is in a region where the Hessian matrix is not negative, the proposal
-is automatically rejected. The function \code{discount} controls the size of the Newton steps.
+is automatically rejected. The argument \code{discount} controls the size of the Newton steps.
 }
 \seealso{
 \code{\link[spatial.gev.bma]{gev.update.lambda}}
