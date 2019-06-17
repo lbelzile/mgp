@@ -11,7 +11,7 @@ dinvgamma(x, shape, scale, log = TRUE)
 
 \item{shape}{shape parameter, strictly positive}
 
-\item{scale}{rate parameter, strictly positive}
+\item{scale}{rate parameter of the gamma distribution, strictly positive}
 
 \item{log}{logical; should the log-density be returned?}
 }

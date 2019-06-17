@@ -1,8 +1,7 @@
 Package: mgp
 Type: Package
 Title: Multivariate generalized Pareto models
-Version: 2019.06.04
-Date: 2019-06-04
+Version: 2019.06.14
 Author: Leo Belzile
 Maintainer: Leo Belzile <belzilel@gmail.com>
 Description: Utilities for fitting Brown-Resnick, extremal Student

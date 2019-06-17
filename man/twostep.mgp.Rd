@@ -4,11 +4,11 @@
 \alias{twostep.mgp}
 \title{Two-step Markov chain Monte Carlo algorithm for multivariate generalized Pareto models}
 \usage{
-twostep.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br",
-  "xstud"), coord, start, numiter = 40000L, burnin = 5000L,
-  thin = 1L, verbose = 50L, transform = FALSE, censor = TRUE,
-  filename, keepburnin = TRUE, geoaniso = TRUE, likt = c("mgp",
-  "pois", "binom"), saveinterm = 500L, ...)
+twostep.mgp(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
+  "lgm"), coord, start, numiter = 40000L, burnin = 5000L, thin = 1L,
+  verbose = 100L, filename, censor = TRUE, keepburnin = TRUE,
+  geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE,
+  likt = c("mgp", "pois", "binom"), saveinterm = 500L, ...)
 }
 \arguments{
 \item{dat}{n by D matrix of observations}
@@ -45,16 +45,18 @@ If any of \code{scale}, \code{shape} or \code{marg.pcov} are missing, the functi
 
 \item{verbose}{report current values via print every \code{verbose} iterations.}
 
-\item{transform}{logical; should parameters be sampled on an unconstrained space if they are bounded. Default is \code{FALSE}, in which case
-the Metropolis-Hastings proposals are performed by sampling from multivariate truncated Gaussian}
+\item{filename}{name of file for save.}
 
 \item{censor}{logical; should censored likelihood be used? Default to \code{TRUE}}
-
-\item{filename}{name of file for save.}
 
 \item{keepburnin}{logical; should initial runs during \code{burnin} be kept for diagnostic. Default to \code{TRUE}.}
 
 \item{geoaniso}{logical; should geometric anisotropy be included? Default to \code{TRUE}.}
+
+\item{blockupsize}{size of block for updates of the scale parameter; \code{ncol(dat)} yields individual updates}
+
+\item{transform}{logical; should parameters be sampled on an unconstrained space if they are bounded. Default is \code{FALSE}, in which case
+the Metropolis-Hastings proposals are performed by sampling from multivariate truncated Gaussian}
 
 \item{likt}{string indicating the type of likelihood, with an additional contribution for the non-exceeding components: one of  \code{"mgp"}, \code{"binom"} and \code{"pois"}.}
 

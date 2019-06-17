@@ -8,21 +8,27 @@
 #' @export
 #' @keywords internal
 #' @return a list with \code{res} containing the results of the chain
-twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud"), coord, start,
-                        numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 50L, transform = FALSE, censor = TRUE, filename,
-                        keepburnin = TRUE, geoaniso = TRUE, likt = c("mgp", "pois", "binom"),
-                        saveinterm = 500L, ...) {
+twostep.mgp <-  function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
+                         numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename, censor = TRUE,
+                         keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE,
+                         likt = c("mgp", "pois", "binom"),saveinterm = 500L, ...) {
+
+  lgm <- mcmc.mgp(dat = dat, mthresh = mthresh, thresh = thresh, lambdau = lambdau,
+                  model = "lgm", coord = coord, start = start,
+                  numiter = numiter, burnin = 300, thin = thin, verbose = verbose,
+                  filename = filename, censor = censor, keepburnin = keepburnin,
+                  geoaniso = geoaniso, blockupsize = blockupsize, transform = FALSE, saveinterm = 1e8L)
+
   slurm_arrayid <- Sys.getenv("SLURM_ARRAY_TASK_ID")
   slurm_jobid <- Sys.getenv("SLURM_JOB_ID")
-  filename <- paste0(
-    filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, "_",
-    model, "_twostep", ifelse(slurm_jobid == "", "", "_"), slurm_jobid
-  )
-
+  filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid,
+                     ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
   model <- match.arg(model)
   likt <- match.arg(likt)
   ellips <- list(...)
+  thin <- as.integer(thin)
   B <- numiter * thin + burnin
+
   if (isTRUE(is.finite(saveinterm))) {
     if (saveinterm < 0) {
       saveinterm <- B + 1L
@@ -57,7 +63,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   loc <- as.matrix(coord[, 1:2])
   Xm <- cbind(1, scale(as.matrix(coord)))
   di <- distg(loc = coord[, 1:2], scale = 1, rho = 0)
-
+  medist <- median(di[upper.tri(di)])
   ellips <- list(...)
   # Precision and generating vectors for Monte Carlo routines
   genvec1 <- ellips$genvec1
@@ -77,27 +83,18 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     mmin <- apply(dat, 2, min)
   }
   mmax <- apply(dat, 2, max)
-  # Independence likelihood
-  indeplik <- function(par, dat, mthresh, ...) {
-    stopifnot(ncol(dat) == length(par) - 1L)
-    D <- length(par) - 1
-    -sum(sapply(1:D, function(j) {
-      mev::gpd.ll(par = c(par[j], par[D + 1]), dat = dat[dat[, j] > mthresh[j], j] - mthresh[j])
-    }))
-  }
-
-  # Starting values for the chain and proposal covariance for the marginal parameters
-  scale.c <- start$scale
-  shape.c <- start$shape
-  if (length(shape.c) == 1L) {
-    cshape <- TRUE
+  if(is.null(ellips$numindiv)){
+    numindiv <- 2000L
   } else {
-    cshape <- FALSE
+    numindiv <- as.integer(ellips$numindiv)
   }
-
+  # Starting values for the chain and proposal covariance for the marginal parameters
+  scale.c <- apply(lgm$res[,1:D], 2, median)
+  shape.c <- median(lgm$res[,D+1])
   # Copy dependence parameters
   dep.c <- start$dep
   # Constant for scaling of covariance matrix
+
   ndep <- length(dep.c)
   if (ndep == 0) {
     stop("Invalid dependence parameter `dep` in `start`")
@@ -117,24 +114,15 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   if (is.null(dep.pcov)) {
     stop("Missing `dep.prior` in `start`")
   }
-
-
-  if (is.null(scale.c) || is.null(shape.c)) {
-    margpars <- sapply(1:D, function(j) {
-      mev::fit.gpd(xdat = as.vector(dat[, j]), threshold = mthresh[j])$est
-    })
-    scale.c <- as.vector(margpars[1, ])
-    shape.c <- as.vector(margpars[2, ])
-    cshape <- FALSE
-  } else if (!is.null(shape.c)) {
-    cshape <- ifelse(length(shape.c) > 1, FALSE, TRUE)
-  }
-
-
   # geometric anisotropy
   if (geoaniso) {
     aniso.c <- start$aniso
-    aniso.pcov <- diag(c(0.01, 0.01))
+    if(is.null(ellips$aniso.pcov)){
+      aniso.pcov <- diag(c(0.01, 0.01))
+    } else{
+      aniso.pcov <- ellips$aniso.pcov
+      stopifnot(isTRUE(all.equal(dim(aniso.pcov), rep(2L,2), check.attributes = FALSE)))
+    }
     if (is.null(aniso.c)) {
       aniso.c <- c(1.2, 0)
     }
@@ -144,19 +132,19 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   # set number of parameters, minus regression parameters (separate containers appended via cbind to res)
   npar <- length(scale.c) + length(shape.c) + ndep + ifelse(geoaniso, 2, 0)
   # Positions of parameters for saving
-  scale.i <- 1:length(scale.c)
-  shape.i <- (length(scale.c) + 1:length(shape.c))
-  dep.i <- (shape.i[length(shape.i)] + 1):(shape.i[length(shape.i)] + length(dep.c))
+  shape.i <- D + 1
+  dep.i <- (D + 2):(D + 1 + length(dep.c))
   if (geoaniso) {
     aniso.i <- (npar - 1):npar
   }
   if (model == "xstud") {
-    df.c <- start$df
+    df.c <- start$df #watch out: partial matching of argument names
     df.pcov <- 0.2
-    if (is.null(df.c)) {
+    if(is.null(df.c) || !is.numeric(df.c)) {
       df.c <- 2
     }
     df.lb <- 1 + 1e-5
+    df.ub <- 100
     npar <- npar + 1L
     df.i <- npar
     # Port to dep. to perform updates together with dep
@@ -166,12 +154,21 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     dep.npcov[ndep + 1, ndep + 1] <- df.pcov
     dep.pcov <- dep.npcov
     dep.lb <- c(dep.lb, df.lb)
-    dep.ub <- c(dep.ub, Inf)
+    dep.ub <- c(dep.ub, df.ub)
     dep.i <- c(dep.i, df.i)
+    if(is.null(ellips$df.lpriorfn)){
+      dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) +
+          dgamma(x = x[length(x)]-1, shape = 3, scale = 3, log = TRUE)}
+    } else {
+      dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) +
+          ellips$df.lpriorfn(x[length(x)])}
+    }
     ndep <- ndep + 1L
   } else {
     df.pcov <- NULL
   }
+  lscalelm.i <- (npar + 1):(npar + ncol(Xm) + 2)
+  npar <- npar + ncol(Xm) + 2
 
   if (transform) {
     transform.fn <- function(x) {
@@ -181,18 +178,17 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     transform.fn <- identity
   }
   ckst <- 2.38 * 2.38 / ndep
-  lscalelm.i <- (npar + 1):(npar + ncol(Xm) + 2)
-  npar <- npar + ncol(Xm) + 2
-  if (!cshape) {
-    shapelm.i <- (npar + 1):(npar + ncol(Xm) + 2)
-    npar <- npar + ncol(Xm) + 2
-  }
+
+  # Same, but for shape parameters if the latter are not constant in space
   # Function to create list with parameter, input is model dependent
-  makepar <- function(dep, model = c("br", "xstud"), distm) {
+  makepar <- function(dep, model = c("br", "xstud"), distm, df = NULL) {
     model <- match.arg(model)
     if (model == "xstud") {
+      if (is.null(df)) {
+        stop("Missing `df` in `makepar` function")
+      }
       Sigma <- dep.fun(distm, par = dep)
-      return(list(Sigma = Sigma, df = dep[ndep]))
+      return(list(Sigma = Sigma, df = df))
     } else if (model == "br") {
       Lambda <- dep.fun(distm, par = dep)
       return(par <- list(Lambda = Lambda))
@@ -201,7 +197,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   if (geoaniso) {
     distm.c <- distg(loc, scale = aniso.c[1], rho = aniso.c[2])
     aniso.lpriorfn <- function(aniso) {
-      dnorm(aniso[1] - 1, sd = 1, mean = 0, log = TRUE)
+      dnorm(aniso[1] - 1, sd = 1.5, mean = 0, log = TRUE)
       # dgamma(aniso[1] - 1, scale = 5, shape = 1, log = TRUE) #anisotropy
     }
     aniso.pcov <- diag(c(0.01, 0.01))
@@ -210,36 +206,8 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     aniso.pcov <- NULL
   }
   ntot <- ellips$ntot
-
-  par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
-  # keep only marginal exceedances
-  ldat <- apply(dat, 2, function(col) {
-    as.vector(col[col > 0])
-  })
-  # Define containers
-  lpost <- rep(0, B)
-  accept <- rep(0L, ndep)
-  attempt <- rep(0L, ndep)
-  res <- matrix(data = 0, ncol = npar, nrow = B)
-  margpar <- mcmc.mgp(
-    dat = dat, mthresh = mthresh, thresh = thresh,
-    lambdau = lambdau, model = "lgm", coord = coord,
-    start = list(scale = scale.c, shape = shape.c),
-    numiter = numiter, burnin = burnin, thin = thin,
-    verbose = B, saveinterm = Inf, filename = filename
-  )
-  # Copy results and transform margins
-  res[, scale.i] <- margpar$res[, scale.i]
-  res[, shape.i] <- margpar$res[, shape.i]
-  res[, lscalelm.i] <- margpar$res[, (max(shape.i) + 1):(max(shape.i) + 6)]
-  scale.c <- apply(margpar$res[-(1:min(burnin, 2000)), scale.i], 2, median)
-  if (!cshape) {
-    shape.c <- apply(margpar$res[-(1:min(burnin, 2000)), shape.i], 2, median)
-    res[, shapelm.i] <- margpar$res[, (max(shape.i) + 7):(max(shape.i) + 12)]
-  } else {
-    shape.c <- median(margpar$res[-(1:min(burnin, 2000)), shape.i], na.rm = TRUE)
-  }
-  par.c <- makepar(dep = dep.c, model = model, distm = distm.c)
+  #Scale distance matrix for more meaningful prior specification
+  par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
   if (!censor) {
     loglikfn <- function(scale, shape, par, ...) {
       # Initial evaluation of the log-likelihood
@@ -261,12 +229,25 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     }
   }
   loglik.c <- loglikfn(scale = scale.c, shape = shape.c, par = par.c)
+
+  # Set block update size for scale parameters
+  blockupsize <- min(max(1L, as.integer(blockupsize)), D)
+  facs <- as.factor(rep(1:blockupsize, length = D))
+
+  # Define containers
+  lpost <- rep(0, B)
+  accept <- rep(0L, npar)
+  attempt <- rep(0L, npar)
+  res <- matrix(data = 0, ncol = npar, nrow = B)
+  res[,c(1:(D+1),(npar - ncol(lgm$res) + D + 2):npar)] <- lgm$res
+
+
   # Start timer
   time.0 <- proc.time()[3] # Better would be to time every run and keep median
   ########################################################################
   ####################          LOOP         #############################
   ########################################################################
-  thin <- as.integer(thin)
+
   for (b in 1:B) {
     attempt <- attempt + 1L
 
@@ -295,7 +276,7 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
       }
     }
     # Perform first updates parameter by parameter
-    if (b < min(burnin, 2000L)) {
+    if (b < min(burnin, numindiv)) {
       for (i in 1:ndep) {
         update <- mh.fun(
           cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
@@ -311,13 +292,13 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     } else {
       update <- mh.fun(
         cur = dep.c, lb = dep.lb, ub = dep.ub, ind = 1:ndep, lik.fun = dep.loglikfn,
-        ll = loglik.c, pcov = dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn
+        ll = loglik.c, pcov = ckst * dep.pcov, cond = FALSE, transform = transform, prior.fun = dep.lpriorfn
       )
       if (update$accept) {
-        accept[dep.i] <- accept[dep.i] + 1L
         par.c <- attributes(update$ll)$par
         loglik.c <- update$ll
         dep.c <- update$cur
+        accept[dep.i] <- accept[dep.i] + 1L
       }
     }
 
@@ -365,35 +346,34 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
     # Save current value of the log-likelihood and of all parameters at the end of the iteration
     if (thin == 1 || b %% thin == 0) {
       i <- as.integer(b / thin)
-      lpost[i] <- loglik.c
-      res[i, dep.i] <- dep.c
-      if (geoaniso) {
-        res[i, aniso.i] <- aniso.c
+        lpost[i] <- loglik.c
+        res[i, dep.i] <- dep.c
+        if (geoaniso) {
+          res[i, aniso.i] <- aniso.c
+        }
       }
-    }
 
     # Adapt covariance matrix, but using only previous iterations
     # Stop adapting after burnin
     if (b < burnin) {
-      if (b %% 20 * thin == 0 && b > 200L && b <= 2000L) {
+      if (b %% 20 * thin == 0 && b > 200L && b <= numindiv) {
         # Update covariance matrix of the correlation function and degrees of freedom proposals
         updiag <- sqrt(diag(dep.pcov))
         for (j in 1:ndep) {
-          ada <- adaptive(attempts = attempt[j], acceptance = accept[j], sd.p = updiag[j])
+          ada <- adaptive(attempts = attempt[dep.i[j]], acceptance = accept[dep.i[j]], sd.p = updiag[j])
           updiag[j] <- ada$sd / updiag[j]
-          accept[j] <- ada$acc
-          attempt[j] <- ada$att
+          accept[dep.i[j]] <- ada$acc
+          attempt[dep.i[j]] <- ada$att
         }
         dep.pcov <- diag(updiag) %*% dep.pcov %*% diag(updiag)
-      }
-      if (b > 2000L && b < burnin && (b %% 200) == 0) {
+      } else if (b > max(numindiv, 2000L) && b < burnin && (b %% 200) == 0) {
         mb <- max(b - 1000, 200)
         dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, dep.i])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
       }
       if (b > 200 && b < burnin && (b %% 200) == 0) {
         if (geoaniso) {
           mb <- max(b - 1000, 200)
-          aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-4 * diag(2) - aniso.pcov)
+          aniso.pcov <- aniso.pcov + 0.1 * (cov(res[mb:b, aniso.i]) + 1e-5 * diag(2) - aniso.pcov)
         }
       }
     }
@@ -410,8 +390,15 @@ twostep.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstu
   }
   time <- round((proc.time()[3] - time.0) / 60 / 60, 2)
   save(res, time, dat, Xm, lpost, dep.pcov, aniso.pcov, model, file = paste0(filename, ".RData"))
-  invisible(return(list(
-    res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
-    dep.pcov = dep.pcov, aniso.pcov = aniso.pcov, model = model
-  )))
+  if(keepburnin){
+    invisible(return(list(
+      res = res, time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost,
+      dep.pcov = dep.pcov,  aniso.pcov = aniso.pcov, model = model
+    )))
+  } else{
+    invisible(return(list(
+      res = res[-(1:burnin),], time = time, dat = dat, Xm = Xm, coord = coord, lpost = lpost[-(1:burnin)],
+      dep.pcov = dep.pcov, aniso.pcov = aniso.pcov, model = model
+    )))
+  }
 }

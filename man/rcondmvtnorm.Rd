@@ -4,8 +4,7 @@
 \alias{rcondmvtnorm}
 \title{Conditional samples of Gaussian or Student subvectors}
 \usage{
-rcondmvtnorm(n = 1L, ind, x, lbound = rep(-Inf, length(ind)),
-  ubound = rep(Inf, length(ind)), mu, sigma, df = NULL,
+rcondmvtnorm(n = 1L, ind, x, lbound, ubound, mu, sigma, df = NULL,
   model = c("norm", "stud"))
 }
 \arguments{

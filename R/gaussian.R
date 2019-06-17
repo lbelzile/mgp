@@ -70,7 +70,7 @@ dmvnorm.precis <- function(x, mean, precis, logd = FALSE) {
 #'
 #' @param x vector of observations
 #' @param shape shape parameter, strictly positive
-#' @param scale rate parameter, strictly positive
+#' @param scale rate parameter of the gamma distribution, strictly positive
 #' @param log logical; should the log-density be returned?
 #' @export
 dinvgamma <- function(x, shape, scale, log = TRUE) {

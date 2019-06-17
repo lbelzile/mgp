@@ -11,7 +11,7 @@ dcondmvtnorm(x, ind, lbound = rep(-Inf, length(ind)), ubound = rep(Inf,
 \arguments{
 \item{x}{a \code{p} vector with the values of process at the remaining coordinates}
 
-\item{ind}{a \code{d} vector of indices to with integer entries in \eqn{\{1, \ldots, d+p\}} for which to compute the conditional density}
+\item{ind}{a \code{d} vector of integer indices in \eqn{\{1, \ldots, d+p\}} for which to compute the conditional density}
 
 \item{lbound}{\code{d} vector of lower bounds}
 

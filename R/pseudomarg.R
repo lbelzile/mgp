@@ -40,8 +40,8 @@
 #' @return a list with \code{res} containing the results of the chain
 mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud", "lgm"), coord, start,
                      numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename, censor = TRUE,
-                     keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE, likt = c("mgp", "pois", "binom"),
-                     saveinterm = 500L, ...) {
+                     keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE,
+                     likt = c("mgp", "pois", "binom"),saveinterm = 500L, ...) {
   slurm_arrayid <- Sys.getenv("SLURM_ARRAY_TASK_ID")
   slurm_jobid <- Sys.getenv("SLURM_JOB_ID")
   filename <- paste0(filename, ifelse(slurm_arrayid == "", "", "_"), slurm_arrayid, ifelse(slurm_jobid == "", "", "_"), slurm_jobid)
@@ -113,7 +113,11 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       mev::gpd.ll(par = c(par[j], par[D + 1]), dat = dat[dat[, j] > mthresh[j], j] - mthresh[j])
     }))
   }
-
+  if(is.null(ellips$numindiv)){
+    numindiv <- 2000L
+  } else{
+    numindiv <- as.integer(ellips$numindiv)
+  }
   # Starting values for the chain and proposal covariance for the marginal parameters
   scale.c <- start$scale
   shape.c <- start$shape
@@ -194,7 +198,12 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   # geometric anisotropy
   if (geoaniso) {
     aniso.c <- start$aniso
-    aniso.pcov <- diag(c(0.01, 0.01))
+    if(is.null(ellips$aniso.pcov)){
+      aniso.pcov <- diag(c(0.01, 0.01))
+    } else{
+      aniso.pcov <- ellips$aniso.pcov
+      stopifnot(isTRUE(all.equal(dim(aniso.pcov), rep(2L,2), check.attributes = FALSE)))
+    }
     if (is.null(aniso.c)) {
       aniso.c <- c(1.2, 0)
     }
@@ -214,9 +223,9 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     aniso.i <- (npar - 1):npar
   }
   if (model == "xstud") {
-    df.c <- start$df
+    df.c <- start$df #watch out: partial matching of argument names
     df.pcov <- 0.2
-    if (is.null(df.c)) {
+    if(is.null(df.c) || !is.numeric(df.c)) {
       df.c <- 2
     }
     df.lb <- 1 + 1e-5
@@ -232,7 +241,13 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     dep.lb <- c(dep.lb, df.lb)
     dep.ub <- c(dep.ub, df.ub)
     dep.i <- c(dep.i, df.i)
-    dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) + dgamma(x = x[length(x)]-1, shape = 3, scale = 3, log = TRUE)}
+    if(is.null(ellips$df.lpriorfn)){
+    dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) +
+        dgamma(x = x[length(x)]-1, shape = 3, scale = 3, log = TRUE)}
+    } else{
+      dep.lpriorfn <- function(x){start$dep.lpriorfn(x[-length(x)]) +
+          ellips$df.lpriorfn(x[length(x)])}
+    }
     ndep <- ndep + 1L
   } else {
     df.pcov <- NULL
@@ -267,12 +282,37 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   }
   # Set hyperpriors for random effect on log scale
   lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
-  lscale.fhyp.mean.Vinv <- diag(ncol(Xm)) * 5
+  if(is.null(ellips$lscale.fhyp.mean.Vinv)){
+    lscale.fhyp.mean.Vinv <- diag(ncol(Xm)) * 5
+  } else{
+    lscale.fhyp.mean.Vinv <- ellips$lscale.fhyp.mean.Vinv
+  }
   lscale.fhyp.mean.b <- rep(0, ncol(Xm))
-  lscale.fhyp.tausq.a <- 0.5
-  lscale.fhyp.tausq.b <- 0.1
+  if(is.null(ellips$lscale.fhyp.tausq.a)){
+    lscale.fhyp.tausq.a <- 0.5
+  } else{
+    lscale.fhyp.tausq.a <- ellips$lscale.fhyp.tausq.a
+  }
+  if(is.null(ellips$lscale.fhyp.tausq.b)){
+    lscale.fhyp.tausq.b <- 0.1
+  } else{
+    lscale.fhyp.tausq.b <- ellips$lscale.fhyp.tausq.b
+  }
   lscale.fhyp.crossprod <- c(t(lscale.fhyp.mean.b) %*% lscale.fhyp.mean.Vinv %*% lscale.fhyp.mean.b)
   lscale.mu <- as.vector(Xm %*% lscale.hyp.mean.c)
+  if(is.null(ellips$lscale.fhyp.rho.a)){
+    lscale.fhyp.rho.a <- 2
+  } else{
+    lscale.fhyp.rho.a <- ellips$lscale.fhyp.rho.a
+  }
+  if(is.null(ellips$lscale.fhyp.rho.b)){
+    lscale.fhyp.rho.b <- 2/medist
+  } else{
+    lscale.fhyp.rho.b <- ellips$lscale.fhyp.rho.b
+  }
+
+
+
   # Same, but for shape parameters if the latter are not constant in space
   if (model == "lgm") {
     if (!cshape) {
@@ -307,7 +347,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       shape.hyp.tausq.c <- NULL
     }
   }
-
   if (model %in% c("xstud", "br")) {
     # Function to create list with parameter, input is model dependent
     makepar <- function(dep, model = c("br", "xstud"), distm, df = NULL) {
@@ -337,7 +376,6 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     ntot <- ellips$ntot
     #Scale distance matrix for more meaningful prior specification
     lscale.hyp.rho.c  <- lscale.hyp.rho.c /median(di[upper.tri(di)])
-
     par.c <- makepar(dep = dep.c, model = model, distm = distm.c, df = switch(model, br = NULL, xstud = df.c))
     if (!censor) {
       loglikfn <- function(scale, shape, par, ...) {
@@ -450,7 +488,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     # Laplace approximation for the range parameter
     lscale.hyp.rho.c <- updt.range(
       tau = lscale.c - c(Xm %*% lscale.hyp.mean.c), alpha = 1 / lscale.hyp.tausq.c,
-      lambda = lscale.hyp.rho.c, di = di, a = 2, b = 2/medist, discount = 0.4, lb = 1e-2, maxstep = medist
+      lambda = lscale.hyp.rho.c, di = di, a = lscale.fhyp.rho.a, b = lscale.fhyp.rho.b, discount = 1, lb = 1e-2, maxstep = medist
     )
     if (attributes(lscale.hyp.rho.c)$accept) { # only update is move is accepted
       lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
@@ -534,7 +572,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
         }
       }
       # Perform first updates parameter by parameter
-      if (b < min(burnin, 2000L)) {
+      if (b < min(burnin, numindiv)) {
         for (i in 1:ndep) {
           update <- mh.fun(
             cur = dep.c, lb = dep.lb[i], ub = dep.ub[i], ind = i, lik.fun = dep.loglikfn,
@@ -629,7 +667,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
     # Adapt covariance matrix, but using only previous iterations
     # Stop adapting after burnin
     if (model != "lgm" && b < burnin) {
-      if (b %% 20 * thin == 0 && b > 200L && b <= 2000L) {
+      if (b %% 20 * thin == 0 && b > 200L && b <= numindiv) {
         # Update covariance matrix of the marginal proposals - only diagonal elements to begin with
         updiag <- sqrt(diag(marg.pcov))
         for (j in 1:(D + 1)) { # scale and shape parameters
@@ -649,7 +687,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
           attempt[dep.i[j]] <- ada$att
         }
         dep.pcov <- diag(updiag) %*% dep.pcov %*% diag(updiag)
-      } else if (b > 2000L && b < burnin && (b %% 200) == 0) {
+      } else if (b > max(numindiv, 2000L) && b < burnin && (b %% 200) == 0) {
         mb <- max(b - 1000, 200)
         marg.pcov <- marg.pcov + 0.1 * (cov(res[mb:b, c(1:D, shape.i)]) + 1e-4 * diag(D + 1) - marg.pcov)
         dep.pcov <- dep.pcov + 0.1 * (cov(transform.fn(res[mb:b, dep.i])) + 1e-4 * diag(ncol(dep.pcov)) - dep.pcov)
