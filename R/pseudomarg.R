@@ -283,7 +283,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
   # Set hyperpriors for random effect on log scale
   lscale.hyp.precis.c <- solve(powerexp.cor(h = di, scale = lscale.hyp.rho.c))
   if(is.null(ellips$lscale.fhyp.mean.Vinv)){
-    lscale.fhyp.mean.Vinv <- diag(ncol(Xm)) * 5
+    lscale.fhyp.mean.Vinv <- diag(ncol(Xm)) / 100
   } else{
     lscale.fhyp.mean.Vinv <- ellips$lscale.fhyp.mean.Vinv
   }
@@ -336,7 +336,7 @@ mcmc.mgp <- function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xstud",
       shape.hyp.precis.c <- solve(powerexp.cor(h = di, scale = shape.hyp.rho.c))
 
       shape.mu <- as.vector(Xm %*% shape.hyp.mean.c)
-      shape.fhyp.mean.Vinv <- diag(ncol(Xm)) * 5
+      shape.fhyp.mean.Vinv <- diag(ncol(Xm)) / 100
       shape.fhyp.mean.b <- rep(0, ncol(Xm))
       shape.fhyp.tausq.a <- 0.5
       shape.fhyp.tausq.b <- 0.1
