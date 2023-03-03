@@ -245,31 +245,47 @@ adaptive <- function(attempts, acceptance, sd.p) {
   return(list(sd = newsd, acc = acc, att = att))
 }
 
-#' Wrap angular component in anisotropy
-#' @param ang angle
-#' @return angle between \eqn{(-\pi/2,\pi/2)}
+#' Wrap angular component
+#'
+#' Due to identifiability issues in anisotropic models,
+#' we must restrict the angles to two quadrants.
+#' @param ang [double] angle in radians
+#' @param start [double] angle 
+#' @return angles between \code{start} and \code{start} + \eqn{pi}
 #' @keywords internal
 #' @export
-wrapAng <- function(ang) {
-  stopifnot(length(ang) == 1L)
-  if (ang > -pi / 2 && ang < pi / 2) {
-    return(ang)
-  } else {
-    stang <- ang %% (2 * pi)
-    if (stang > 1.5 * pi) {
-      return(stang - 2 * pi)
-    } else if (stang < 0.5 * pi) {
-      return(stang)
-    } else if (stang > pi) {
-      return(-0.5 * pi + (1.5 * pi - stang))
-    } else {
-      return(pi / 2 - (stang - pi / 2))
-    }
-  }
+wrapAng <- function(ang, start = -pi/2) {
+ stopifnot(length(start) == 1)
+  (ang - start) %% pi + start
 }
 
-
-
+#' Angular mean and variance length for processes mod pi
+#' 
+#' Since the process is defined mod pi, we shift angles by start
+#' and multiply them by 2 before calculating the angular mean and variance.
+#' Due to the back-transformation, the maximum variance length that can be achieved
+#' is 1/2.
+#' @inheritParams wrapAng
+#' @param weights [double] vector of weights, used
+#' @return a list with components
+#' \describe{
+#' \item{\code{mean}}{mean angle, between \code{start} and \code{start} + \eqn{pi}}
+#' \item{\code{varl}}{variance length}
+#' }
+#' @keywords internal
+#' @expor
+summaryAng <- function(ang, start, weights = rep(1, length(ang))) {
+# Put angles back on 0, 2pi
+ stopifnot(length(weights) == length(ang),
+           length(start) == 1L)
+ ang <- 2*(wrapAng(ang, start = start) - start)
+ msin <- sum(weights*sin(ang))/sum(weights)
+ mcos <- sum(weights*cos(ang))/sum(weights)
+ list(
+ mean = wrapAng(atan(msin/mcos)/2 + start, start = start),
+ varl = 1 - sqrt(msin^2 + mcos^2)
+ )
+}
 
 
 #' Update for latent Gaussian model for the scale parameter of a generalized Pareto

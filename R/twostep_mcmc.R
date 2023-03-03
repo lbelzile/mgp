@@ -12,10 +12,9 @@ twostep.mgp <-  function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xst
                          numiter = 4e4L, burnin = 5e3L, thin = 1L, verbose = 100L, filename, censor = TRUE,
                          keepburnin = TRUE, geoaniso = TRUE, blockupsize = ncol(dat), transform = FALSE,
                          likt = c("mgp", "pois", "binom"),saveinterm = 500L, ...) {
-
   lgm <- mcmc.mgp(dat = dat, mthresh = mthresh, thresh = thresh, lambdau = lambdau,
                   model = "lgm", coord = coord, start = start,
-                  numiter = numiter, burnin = 300, thin = thin, verbose = verbose,
+                  numiter = numiter, burnin = burnin, thin = thin, verbose = verbose,
                   filename = filename, censor = censor, keepburnin = keepburnin,
                   geoaniso = geoaniso, blockupsize = blockupsize, transform = FALSE, saveinterm = 1e8L)
 
@@ -93,6 +92,7 @@ twostep.mgp <-  function(dat, mthresh, thresh, lambdau = 1, model = c("br", "xst
   shape.c <- median(lgm$res[,D+1])
   # Copy dependence parameters
   dep.c <- start$dep
+
   # Constant for scaling of covariance matrix
 
   ndep <- length(dep.c)
