@@ -142,8 +142,16 @@ gpdtopar <- function(dat, loc = 0, scale, shape, lambdau = 1) {
 #' }
 #' @return the value of the log-likelihood with \code{attributes} \code{expme}, giving the exponent measure
 #' @export
-likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud", "log"),
-                   likt = c("mgp", "pois", "binom"), lambdau = 1, ...) {
+likmgp <- function(dat,
+                   thresh,
+                   loc,
+                   scale,
+                   shape,
+                   par,
+                   model = c("br", "xstud", "log", "neglog"),
+                   likt = c("mgp", "pois", "binom"),
+                   lambdau = 1,
+                   ...) {
   # Rename arguments
   tdat <- dat
   N <- nrow(dat)
@@ -158,13 +166,13 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
   if (model == "br") {
     Lambda <- par$Lambda
     if (is.null(Lambda)) {
-      stop("Invalid `par` for `br` model.")
+      stop("Invalid \"par\" for \"br\" model.")
     }
   } else if (model == "xstud") {
     Sigma <- par$Sigma
     df <- par$df
     if (any(is.null(df), is.null(Sigma))) {
-      stop("Invalid `par` for `xstud` model.")
+      stop("Invalid \"par\" for \"xstud\" model.")
     }
   } else if (model == "log") {
     alpha <- par$alpha
@@ -176,9 +184,18 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
       alpha <- 1 / alpha
     }
     if (alpha < 0) {
-      stop("Invalid `par` for `log` model.")
+      stop("Invalid \"par\" for \"log\" model.")
     }
-  }
+  } else if(model == "neglog"){
+      alpha <- par$alpha
+      if (is.null(alpha)) {
+        stop("Invalid \"par\" for \"neglog\" model.")
+      }
+      alpha <- alpha[1]
+      if (alpha < 0) {
+        alpha <- -alpha
+      }
+    }
   stopifnot(is.matrix(tdat), ncol(tdat) > 1)
   ellips <- list(...)
   if (likt %in% c("pois", "binom")) {
@@ -263,6 +280,21 @@ likmgp <- function(dat, thresh, loc, scale, shape, par, model = c("br", "xstud",
     }
     intens <- ldVfunlog(x = tdat, alpha = alpha, lV = lVx)
     exponentMeasure <- exp(lVu)
+  } else if(model == "neglog"){
+    Vfunneglog <- function(u, alpha){
+      res <- 0
+      tu <- u^alpha
+      for(i in 1:length(u)){
+        res <- res + ifelse(i%%2 == 1, 1, -1) * sum(combn(tu, i, FUN = sum)^(-1/alpha))
+      }
+      return(res)
+    }
+    exponentMeasure <- Vfunneglog(u = tu, alpha = alpha)
+    dlogVneglog <- function(x, alpha){
+      x <- as.matrix(x)
+      nrow(x)*(lgamma(1/alpha + ncol(x)) - lgamma(1/alpha)) + length(x)*log(alpha) + (alpha-1)*sum(log(x)) -(1/alpha + ncol(x))*sum(log(rowSums(x^alpha)))
+    }
+    intens <- dlogVneglog(x = tdat, alpha = alpha)
   }
   res <- intens + jac + switch(likt,
     mgp = -N * log(exponentMeasure),

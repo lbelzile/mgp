@@ -197,51 +197,38 @@ rprop.rwmh <- function(cur = NULL, trcur = NULL, cov, lbound = rep(-Inf, ncol(co
 #' @param attempts integer indicating number of attempts
 #' @param acceptance integer giving the number of moves accepted by the algorithm
 #' @param sd.p standard deviation of proposal
+#' @param target target acceptance rate
 #' @return a list with components \code{sd}, \code{acc}, \code{att}
 #' @export
 #' @keywords internal
-adaptive <- function(attempts, acceptance, sd.p) {
-  stopifnot(sd.p > 0)
+adaptive <- function(attempts, acceptance, sd.p, target = 0.234) {
+  stopifnot(sd.p > 0,
+            length(target) == 1L,
+            all(target > 0),
+            all(target < 1))
   if (attempts < acceptance) {
     stop("Invalid input: the number of attempts must be larger than the number of acceptance")
   }
   att <- attempts
   acc <- acceptance
   newsd <- sd.p
-  if (att > 20) {
-    if (acc / att > 0.9) {
-      newsd <- sd.p * 1.5
-      att <- 0L
-      acc <- 0L
-    } else if (acc / att < 0.05) {
-      newsd <- sd.p * 0.5
-      att <- 0L
-      acc <- 0L
-    }
+  dist_target <- qlogis(acc / att) - qlogis(target)
+  multfact <- plogis(dist_target)/0.5
+  if (att > 20 & abs(dist_target) > 2) {
+    newsd <- sd.p * multfact
+    att <- 0L
+    acc <- 0L
   }
-  if (att > 30) {
-    if (acc / att > 0.5) {
-      newsd <- sd.p * 1.25
-      att <- 0L
-      acc <- 0L
-    } else if (acc / att < 0.10) {
-      newsd <- sd.p * 0.75
-      att <- 0L
-      acc <- 0L
-    }
+  if (att > 30 & abs(dist_target) > 1.25) {
+    newsd <- sd.p * multfact
+    att <- 0L
+    acc <- 0L
   }
   if (att > 50) {
-    if (acc / att > 0.35) {
-      newsd <- sd.p * 1.1
-      att <- 0L
-      acc <- 0L
-    } else if (acc / att < 0.2) {
-      newsd <- sd.p * 0.95
-      att <- 0L
-      acc <- 0L
-    }
+    newsd <- sd.p * multfact
+    att <- 0L
+    acc <- 0L
   }
-
   return(list(sd = newsd, acc = acc, att = att))
 }
 
@@ -250,7 +237,7 @@ adaptive <- function(attempts, acceptance, sd.p) {
 #' Due to identifiability issues in anisotropic models,
 #' we must restrict the angles to two quadrants.
 #' @param ang [double] angle in radians
-#' @param start [double] angle 
+#' @param start [double] angle
 #' @return angles between \code{start} and \code{start} + \eqn{pi}
 #' @keywords internal
 #' @export
@@ -260,7 +247,7 @@ wrapAng <- function(ang, start = -pi/2) {
 }
 
 #' Angular mean and variance length for processes mod pi
-#' 
+#'
 #' Since the process is defined mod pi, we shift angles by start
 #' and multiply them by 2 before calculating the angular mean and variance.
 #' Due to the back-transformation, the maximum variance length that can be achieved
